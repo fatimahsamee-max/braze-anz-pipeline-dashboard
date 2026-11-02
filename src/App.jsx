@@ -215,17 +215,22 @@ export default function App() {
   const priorityDeals = useMemo(() => {
     return deals.map(d => {
       const days = getDaysUntilClose(d.closeDate);
-      let tier = 'Tier 3 (181+ Days)';
-      let badgeColor = 'bg-slate-100 text-slate-700 border-slate-200';
+      let tier = null;
+      let badgeColor = '';
+
       if (days <= 90) {
-        tier = 'Tier 1: High Priority (0-90 Days)';
-        badgeColor = 'bg-rose-50 text-rose-700 border-rose-200';
+        tier = 'Tier 1: High Priority (0–90 Days)';
+        badgeColor = days < 0 
+          ? 'bg-rose-100 text-rose-800 border-rose-300 font-bold' 
+          : 'bg-rose-50 text-rose-700 border-rose-200';
       } else if (days <= 180) {
-        tier = 'Tier 2: Second Priority (91-180 Days)';
+        tier = 'Tier 2: Second Priority (91–180 Days)';
         badgeColor = 'bg-amber-50 text-amber-700 border-amber-200';
       }
+
       return { ...d, days, tier, badgeColor };
-    }).sort((a, b) => a.days - b.days);
+    }).filter(d => d.tier !== null)
+      .sort((a, b) => a.days - b.days);
   }, [deals]);
 
   const filteredDeals = useMemo(() => {
@@ -306,7 +311,7 @@ export default function App() {
               activeTab === 'focus' ? 'bg-[#FF595A] text-white shadow-sm' : 'text-indigo-200 hover:bg-white/10'
             }`}
           >
-            <Compass className="w-3.5 h-3.5" /> Focus Opportunities (0-90 & 91-180d)
+            <Compass className="w-3.5 h-3.5" /> Focus Opportunities (0–90 & 91–180d)
           </button>
         </div>
       </header>
@@ -622,77 +627,151 @@ export default function App() {
         {activeTab === 'focus' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <Compass className="w-5 h-5 text-rose-500" /> Focus Pipeline Priorities by Close Date
-                </h2>
-                <span className="text-xs text-slate-500">Anchor Date: 02 Nov 2026</span>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-2">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <Compass className="w-5 h-5 text-[#FF595A]" /> Focus Pipeline Priorities (0–180 Days)
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Immediate execution runway segmented into 0–90 day targets vs 91–180 day mid-term targets.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <span className="text-xs bg-slate-100 text-slate-700 px-3 py-1.5 rounded-lg font-semibold border border-slate-200">
+                    Total Focus Pipe: ${priorityDeals.reduce((sum, d) => sum + d.acv, 0).toLocaleString()}
+                  </span>
+                </div>
               </div>
-              <p className="text-xs text-slate-500 mb-6">
-                Segmenting qualifying pipeline into immediate 0-90 day execution targets versus 91-180 day second tier runway.
-              </p>
 
-              {['Tier 1: High Priority (0-90 Days)', 'Tier 2: Second Priority (91-180 Days)', 'Tier 3 (181+ Days)'].map(tierName => {
-                const groupDeals = priorityDeals.filter(d => d.tier === tierName);
-                if (groupDeals.length === 0) return null;
-                const groupAcv = groupDeals.reduce((sum, d) => sum + d.acv, 0);
-
-                return (
-                  <div key={tierName} className="mb-8">
-                    <div className="flex items-center justify-between bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200 mb-3">
-                      <div className="flex items-center gap-2 font-bold text-sm text-slate-800">
-                        <span className={`w-2.5 h-2.5 rounded-full ${
-                          tierName.includes('Tier 1') ? 'bg-rose-500' : tierName.includes('Tier 2') ? 'bg-amber-500' : 'bg-slate-400'
-                        }`}></span>
-                        {tierName}
-                      </div>
-                      <div className="text-xs font-semibold text-slate-700">
-                        {groupDeals.length} Deals · Total: <span className="text-indigo-600 font-bold">${groupAcv.toLocaleString()}</span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {groupDeals.map(d => (
-                        <div key={d.id} className="bg-white p-4 rounded-xl border border-slate-200 hover:border-indigo-300 transition shadow-xs flex flex-col justify-between">
-                          <div>
-                            <div className="flex items-start justify-between gap-2">
-                              <a 
-                                href={`https://braze.lightning.force.com/lightning/r/Opportunity/${d.id}/view`}
-                                target="_blank" 
-                                rel="noreferrer"
-                                className="font-bold text-xs text-indigo-600 hover:underline line-clamp-2"
-                              >
-                                {d.name}
-                              </a>
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border shrink-0 ${d.badgeColor}`}>
-                                {d.days}d to close
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between text-xs mt-3">
-                              <span className="text-slate-500">{d.team} · {d.motion}</span>
-                              <span className="font-extrabold text-slate-900">${d.acv.toLocaleString()}</span>
-                            </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                {/* TIER 1 SECTION */}
+                <div className="space-y-3">
+                  {(() => {
+                    const t1Deals = priorityDeals.filter(d => d.tier && d.tier.includes('Tier 1'));
+                    const t1Acv = t1Deals.reduce((sum, d) => sum + d.acv, 0);
+                    return (
+                      <>
+                        <div className="flex items-center justify-between bg-rose-50/70 p-3 rounded-xl border border-rose-200">
+                          <div className="flex items-center gap-2">
+                            <span className="w-3 h-3 rounded-full bg-rose-500"></span>
+                            <span className="text-xs font-bold text-rose-950 uppercase tracking-wider">
+                              Tier 1: High Priority (0–90 Days)
+                            </span>
                           </div>
-
-                          <div className="border-t border-slate-100 pt-3 mt-3 flex items-center justify-between text-[11px] text-slate-500">
-                            <span>AE: {d.ae}</span>
-                            <button 
-                              onClick={() => {
-                                setEditingDeal(d);
-                                setEditAcv(d.acv.toString());
-                                setEditCommit(d.commitStatus);
-                              }}
-                              className="text-indigo-600 font-semibold hover:text-indigo-800 flex items-center gap-1"
-                            >
-                              <Edit3 className="w-3 h-3" /> Update
-                            </button>
-                          </div>
+                          <span className="text-xs font-bold text-rose-700">
+                            {t1Deals.length} Deals · ${t1Acv.toLocaleString()}
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
+
+                        <div className="space-y-2.5">
+                          {t1Deals.length === 0 ? (
+                            <div className="text-xs text-slate-400 p-4 text-center border border-dashed rounded-xl">No Tier 1 deals found.</div>
+                          ) : (
+                            t1Deals.map(d => (
+                              <div key={d.id} className="bg-white p-3.5 rounded-xl border border-slate-200 hover:border-rose-300 transition shadow-xs flex flex-col justify-between gap-2">
+                                <div className="flex items-start justify-between gap-2">
+                                  <a 
+                                    href={`https://braze.lightning.force.com/lightning/r/Opportunity/${d.id}/view`}
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="font-bold text-xs text-indigo-600 hover:underline line-clamp-1"
+                                  >
+                                    {d.name}
+                                  </a>
+                                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border shrink-0 ${d.badgeColor}`}>
+                                    {d.days < 0 ? 'Overdue' : `${d.days}d to close`}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between text-xs text-slate-600">
+                                  <span>{d.team} · {d.motion}</span>
+                                  <span className="font-extrabold text-slate-900">${d.acv.toLocaleString()}</span>
+                                </div>
+                                <div className="border-t border-slate-100 pt-2 flex items-center justify-between text-[11px] text-slate-500">
+                                  <span>AE: {d.ae}</span>
+                                  <button 
+                                    onClick={() => {
+                                      setEditingDeal(d);
+                                      setEditAcv(d.acv.toString());
+                                      setEditCommit(d.commitStatus);
+                                    }}
+                                    className="text-indigo-600 font-semibold hover:text-indigo-800 flex items-center gap-1"
+                                  >
+                                    <Edit3 className="w-3 h-3" /> Update
+                                  </button>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+
+                {/* TIER 2 SECTION */}
+                <div className="space-y-3">
+                  {(() => {
+                    const t2Deals = priorityDeals.filter(d => d.tier && d.tier.includes('Tier 2'));
+                    const t2Acv = t2Deals.reduce((sum, d) => sum + d.acv, 0);
+                    return (
+                      <>
+                        <div className="flex items-center justify-between bg-amber-50/70 p-3 rounded-xl border border-amber-200">
+                          <div className="flex items-center gap-2">
+                            <span className="w-3 h-3 rounded-full bg-amber-500"></span>
+                            <span className="text-xs font-bold text-amber-950 uppercase tracking-wider">
+                              Tier 2: Second Priority (91–180 Days)
+                            </span>
+                          </div>
+                          <span className="text-xs font-bold text-amber-700">
+                            {t2Deals.length} Deals · ${t2Acv.toLocaleString()}
+                          </span>
+                        </div>
+
+                        <div className="space-y-2.5">
+                          {t2Deals.length === 0 ? (
+                            <div className="text-xs text-slate-400 p-4 text-center border border-dashed rounded-xl">No Tier 2 deals found.</div>
+                          ) : (
+                            t2Deals.map(d => (
+                              <div key={d.id} className="bg-white p-3.5 rounded-xl border border-slate-200 hover:border-amber-300 transition shadow-xs flex flex-col justify-between gap-2">
+                                <div className="flex items-start justify-between gap-2">
+                                  <a 
+                                    href={`https://braze.lightning.force.com/lightning/r/Opportunity/${d.id}/view`}
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="font-bold text-xs text-indigo-600 hover:underline line-clamp-1"
+                                  >
+                                    {d.name}
+                                  </a>
+                                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border shrink-0 ${d.badgeColor}`}>
+                                    {d.days}d to close
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between text-xs text-slate-600">
+                                  <span>{d.team} · {d.motion}</span>
+                                  <span className="font-extrabold text-slate-900">${d.acv.toLocaleString()}</span>
+                                </div>
+                                <div className="border-t border-slate-100 pt-2 flex items-center justify-between text-[11px] text-slate-500">
+                                  <span>AE: {d.ae}</span>
+                                  <button 
+                                    onClick={() => {
+                                      setEditingDeal(d);
+                                      setEditAcv(d.acv.toString());
+                                      setEditCommit(d.commitStatus);
+                                    }}
+                                    className="text-indigo-600 font-semibold hover:text-indigo-800 flex items-center gap-1"
+                                  >
+                                    <Edit3 className="w-3 h-3" /> Update
+                                  </button>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
             </div>
           </div>
         )}
