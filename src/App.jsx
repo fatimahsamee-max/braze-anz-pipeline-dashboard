@@ -11,11 +11,9 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, Legend 
 } from 'recharts';
 
-// --- CONFIGURATION ---
 const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/109jy9sFdx0s0aZq5CdxbgQnMH5INkUUKvjvhTYoZ8OA/export?format=csv&gid=2048510077";
 const WEB_APP_WRITEBACK_URL = ""; 
 
-// Fallback Targets matching sheet rows 4-10
 const INITIAL_TARGETS = {
   total: 18710000,
   inbound: 10000000,
