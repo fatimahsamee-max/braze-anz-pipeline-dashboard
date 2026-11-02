@@ -12,6 +12,7 @@ import {
 } from 'recharts';
 
 const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSChLkaPJrSjfFtM1vTWbkl2uffjadl-oV5qCdkTIIqsE7kVU_3eh3Vp4suNJfjUltlcT1t00Pi9KIP/pub?gid=2048510077&single=true&output=csv";
+const HISTORY_CSV_URL = ""; // Optional: Paste the published CSV URL of 'Pipeline_History' here
 
 const INITIAL_TARGETS = {
   total: 18710000,
@@ -25,11 +26,177 @@ const INITIAL_TARGETS = {
   }
 };
 
-// Speedometer Gauge Component: needle strictly moves with Pipeline Generation (Attained)
+// Executive Summary: Day-over-Day and Week-over-Week Pipeline Velocity
+function ExecutiveMovementSummary({ historyData, deals, targets }) {
+  const [timeframe, setTimeframe] = useState('DoD');
+  const [selectedTeam, setSelectedTeam] = useState('ALL');
+
+  const currentTeamMetrics = useMemo(() => {
+    let filteredDeals = deals;
+    let target = targets.total;
+
+    if (selectedTeam !== 'ALL') {
+      filteredDeals = deals.filter(d => {
+        const t = (d.team || '').toUpperCase();
+        if (selectedTeam === 'ANZ ENT') return t.includes('ENT');
+        if (selectedTeam === 'ANZ Scale') return t.includes('SCALE');
+        if (selectedTeam === 'ANZ SMB') return t.includes('SMB');
+        if (selectedTeam === 'ANZ AM') return t.includes('AM') || t.includes('STRATEGIC');
+        return false;
+      });
+      target = targets.teams[selectedTeam] || 0;
+    }
+
+    const pool = filteredDeals.reduce((sum, d) => sum + d.acv, 0);
+    const attained = filteredDeals.filter(d => d.commitStatus === 'Attained' || d.stage === 'Closed Won').reduce((sum, d) => sum + d.acv, 0);
+    const commit = filteredDeals.filter(d => d.commitStatus === 'Commit').reduce((sum, d) => sum + d.acv, 0);
+    const likely = filteredDeals.filter(d => d.commitStatus === 'Likely').reduce((sum, d) => sum + d.acv, 0);
+    const path = commit + (likely * 0.5);
+    const gap = Math.max(0, target - attained);
+
+    return { pool, attained, commit, likely, path, gap, target };
+  }, [deals, targets, selectedTeam]);
+
+  const deltas = useMemo(() => {
+    if (!historyData || historyData.length === 0) {
+      return { attained: 0, commit: 0, likely: 0, pool: 0, gap: 0, baselineDate: 'Awaiting first daily snapshot' };
+    }
+
+    const teamHistory = historyData
+      .filter(h => (h.team || 'ALL').toUpperCase() === selectedTeam.toUpperCase())
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    if (teamHistory.length === 0) {
+      return { attained: 0, commit: 0, likely: 0, pool: 0, gap: 0, baselineDate: 'No prior data' };
+    }
+
+    let baseline = teamHistory[teamHistory.length - 2];
+    if (timeframe === 'WoW') {
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() - 7);
+      baseline = teamHistory.find(h => new Date(h.date) <= targetDate) || teamHistory[0];
+    }
+
+    if (!baseline) {
+      baseline = teamHistory[teamHistory.length - 1];
+    }
+
+    return {
+      attained: currentTeamMetrics.attained - (baseline.attained || 0),
+      commit: currentTeamMetrics.commit - (baseline.commit || 0),
+      likely: currentTeamMetrics.likely - (baseline.likely || 0),
+      pool: currentTeamMetrics.pool - (baseline.pool || 0),
+      gap: currentTeamMetrics.gap - (baseline.gap || 0),
+      baselineDate: baseline.date
+    };
+  }, [historyData, currentTeamMetrics, selectedTeam, timeframe]);
+
+  const formatDelta = (val, reverseColor = false) => {
+    const isPositive = val > 0;
+    const isZero = val === 0;
+    const absStr = `$${(Math.abs(val) / 1000).toLocaleString()}k`;
+
+    let color = isPositive ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200';
+    if (reverseColor) {
+      color = isPositive ? 'text-rose-700 bg-rose-50 border-rose-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200';
+    }
+    if (isZero) color = 'text-slate-600 bg-slate-50 border-slate-200';
+
+    return (
+      <span className={`inline-flex items-center gap-0.5 text-[11px] font-bold px-2 py-0.5 rounded-md border ${color}`}>
+        {isPositive ? <TrendingUp className="w-3 h-3" /> : !isZero ? <TrendingDown className="w-3 h-3" /> : null}
+        {isPositive ? `+${absStr}` : !isZero ? `-${absStr}` : '$0'}
+      </span>
+    );
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-3 border-b border-slate-100">
+        <div>
+          <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-[#FF595A]" /> Executive Pipeline Movement & Velocity
+          </h2>
+          <p className="text-[11px] text-slate-500">
+            Movement baseline: <strong className="text-slate-700">{deltas.baselineDate}</strong>
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs font-semibold">
+            {['ALL', 'ANZ ENT', 'ANZ Scale', 'ANZ SMB', 'ANZ AM'].map(tm => (
+              <button
+                key={tm}
+                onClick={() => setSelectedTeam(tm)}
+                className={`px-2.5 py-1 rounded-md transition ${
+                  selectedTeam === tm ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-900'
+                }`}
+              >
+                {tm}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs font-semibold">
+            <button
+              onClick={() => setTimeframe('DoD')}
+              className={`px-3 py-1 rounded-md transition ${
+                timeframe === 'DoD' ? 'bg-[#1B0B3B] text-white shadow-xs' : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              DoD
+            </button>
+            <button
+              onClick={() => setTimeframe('WoW')}
+              className={`px-3 py-1 rounded-md transition ${
+                timeframe === 'WoW' ? 'bg-[#1B0B3B] text-white shadow-xs' : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              WoW
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="bg-slate-50/70 p-3 rounded-xl border border-slate-200">
+          <div className="text-[10px] uppercase font-bold text-slate-500 mb-1">PG Attained (S2+)</div>
+          <div className="text-lg font-black text-slate-900">${(currentTeamMetrics.attained / 1000000).toFixed(2)}M</div>
+          <div className="mt-2">{formatDelta(deltas.attained)}</div>
+        </div>
+
+        <div className="bg-slate-50/70 p-3 rounded-xl border border-slate-200">
+          <div className="text-[10px] uppercase font-bold text-slate-500 mb-1">Commit Stage</div>
+          <div className="text-lg font-black text-slate-900">${(currentTeamMetrics.commit / 1000000).toFixed(2)}M</div>
+          <div className="mt-2">{formatDelta(deltas.commit)}</div>
+        </div>
+
+        <div className="bg-slate-50/70 p-3 rounded-xl border border-slate-200">
+          <div className="text-[10px] uppercase font-bold text-slate-500 mb-1">Likely Stage</div>
+          <div className="text-lg font-black text-slate-900">${(currentTeamMetrics.likely / 1000000).toFixed(2)}M</div>
+          <div className="mt-2">{formatDelta(deltas.likely)}</div>
+        </div>
+
+        <div className="bg-slate-50/70 p-3 rounded-xl border border-slate-200">
+          <div className="text-[10px] uppercase font-bold text-slate-500 mb-1">Working Pool</div>
+          <div className="text-lg font-black text-slate-900">${(currentTeamMetrics.pool / 1000000).toFixed(2)}M</div>
+          <div className="mt-2">{formatDelta(deltas.pool)}</div>
+        </div>
+
+        <div className="bg-slate-50/70 p-3 rounded-xl border border-slate-200 col-span-2 md:col-span-1">
+          <div className="text-[10px] uppercase font-bold text-slate-500 mb-1">Segment Gap</div>
+          <div className="text-lg font-black text-rose-600">${(currentTeamMetrics.gap / 1000000).toFixed(2)}M</div>
+          <div className="mt-2">{formatDelta(deltas.gap, true)}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Speedometer Gauge: Needle moves strictly based on Pipeline Generation (Attained)
 function TeamSpeedometer({ title, target, deals }) {
   const teamPool = deals.reduce((sum, d) => sum + d.acv, 0);
   
-  // Pipeline Generation (Attained): deals marked as Attained or Closed Won
   const attained = deals
     .filter(d => d.commitStatus === 'Attained' || d.stage === 'Closed Won')
     .reduce((sum, d) => sum + d.acv, 0);
@@ -39,10 +206,7 @@ function TeamSpeedometer({ title, target, deals }) {
   const path = commit + (likely * 0.5);
   
   const gap = Math.max(0, target - attained);
-  
-  // Strict Attained Pacing: Needle and % ONLY move with attained pipeline
-  const displayVal = attained;
-  const percentage = target > 0 ? Math.min(100, Math.round((displayVal / target) * 100)) : 0;
+  const percentage = target > 0 ? Math.min(100, Math.round((attained / target) * 100)) : 0;
   const coveragePercent = target > 0 ? Math.min(100, Math.round((teamPool / target) * 100)) : 0;
   const pathPercent = target > 0 ? Math.min(100, Math.round((path / target) * 100)) : 0;
 
@@ -51,8 +215,7 @@ function TeamSpeedometer({ title, target, deals }) {
   const cx = 110;
   const cy = 95;
 
-  // Clamped angle strictly follows Pipeline Generation
-  const clampedVal = Math.min(Math.max(displayVal, 0), target);
+  const clampedVal = Math.min(Math.max(attained, 0), target);
   const ratio = target > 0 ? clampedVal / target : 0;
   const needleAngle = -90 + ratio * 180;
 
@@ -91,7 +254,6 @@ function TeamSpeedometer({ title, target, deals }) {
         </span>
       </div>
 
-      {/* Speedometer Dial (Moved only by Attained PG) */}
       <div className="relative flex flex-col items-center justify-center my-1">
         <svg viewBox="0 0 220 115" className="w-full max-w-[210px] overflow-visible">
           <path
@@ -131,7 +293,6 @@ function TeamSpeedometer({ title, target, deals }) {
             </g>
           ))}
 
-          {/* Needle strictly pinned to attained PG */}
           <g transform={`rotate(${needleAngle}, ${cx}, ${cy})`}>
             <polygon
               points={`${cx - 2},${cy} ${cx - 0.5},${cy - radius + 4} ${cx + 0.5},${cy - radius + 4} ${cx + 2},${cy}`}
@@ -147,7 +308,6 @@ function TeamSpeedometer({ title, target, deals }) {
         </div>
       </div>
 
-      {/* Coverage Progress Bar showing working pool breakdown */}
       <div className="pt-2 border-t border-slate-100 space-y-1.5">
         <div className="flex justify-between items-center text-[10px] font-semibold text-slate-600">
           <span>Working Coverage: {coveragePercent}%</span>
@@ -181,7 +341,6 @@ function TeamSpeedometer({ title, target, deals }) {
   );
 }
 
-
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [motionFilter, setMotionFilter] = useState('ALL');
@@ -190,6 +349,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   
   const [deals, setDeals] = useState([]);
+  const [historyData, setHistoryData] = useState([]);
   const [targets, setTargets] = useState(INITIAL_TARGETS);
   const [isRefreshing, setIsRefreshing] = useState(true);
   const [lastUpdated, setLastUpdated] = useState('Loading...');
@@ -238,31 +398,13 @@ export default function App() {
         res = await fetch(rawUrl);
         if (!res.ok) throw new Error('Direct fetch failed');
       } catch (e) {
-        // Fallback to proxy if direct CORS is blocked by browser
         res = await fetch(proxyUrl);
       }
 
       const csvText = await res.text();
       const rawLines = csvText.split(/\r\n|\n|\r/).filter(l => l.trim() !== '');
 
-      // 1. Locate Top Targets Summary Row
-      for (let i = 0; i < Math.min(rawLines.length, 15); i++) {
-        const line = rawLines[i].toLowerCase();
-        if (line.includes('q4 target') || line.includes('pg attainment')) {
-          const nextRow = parseCSVRow(rawLines[i + 1] || '');
-          // Extract target numbers from row
-          const totalMatch = nextRow.find(c => c.includes('$') && c.includes('M'));
-          if (totalMatch) {
-            const totalTarget = parseFloat(totalMatch.replace(/[M,$]/gi, '')) * 1000000;
-            if (!isNaN(totalTarget) && totalTarget > 0) {
-              setTargets(prev => ({ ...prev, total: totalTarget }));
-            }
-          }
-          break;
-        }
-      }
-
-      // 2. Locate Opportunity Header Row
+      // Locate Opportunity Header Row
       let headerIdx = -1;
       for (let i = 0; i < Math.min(rawLines.length, 50); i++) {
         const lineLower = rawLines[i].toLowerCase();
@@ -272,7 +414,6 @@ export default function App() {
         }
       }
 
-      // 3. Parse all live opportunities below header
       if (headerIdx !== -1) {
         const headers = parseCSVRow(rawLines[headerIdx]).map(h => h.toLowerCase());
         
@@ -293,7 +434,6 @@ export default function App() {
         const bdrCol = getIdx(['bdr']);
         const partnersCol = headers.findIndex(h => h.includes('partner') && !h.includes('attach') && !h.includes('source'));
         const attachedCol = getIdx(['partner attached', 'attached']);
-        // Match both 'likelihood' and sheet typo 'liklihood'
         const commitCol = getIdx(['liklihood', 'likelihood', 'stage 1 commit', 'commit']);
         const dateCol = getIdx(['close date']);
         const motionCol = getIdx(['inbound/outbound', 'motion']);
@@ -318,7 +458,6 @@ export default function App() {
           const attachedVal = (cols[attachedCol !== -1 ? attachedCol : 8] || '').toLowerCase();
           const isAttached = attachedVal === 'yes' || attachedVal === '1' || attachedVal === 'true';
 
-          // Extract Commit status (supports column 18 'Liklihood to move to Pipe')
           let rawCommit = cols[commitCol !== -1 ? commitCol : 18] || 'Non Commit';
           if (!rawCommit || rawCommit.trim() === '') rawCommit = 'Non Commit';
 
@@ -344,6 +483,36 @@ export default function App() {
         }
       }
 
+      // Fetch snapshot log if URL is configured
+      if (HISTORY_CSV_URL && !HISTORY_CSV_URL.includes("PASTE_")) {
+        try {
+          const hUrl = `${HISTORY_CSV_URL}&_t=${Date.now()}`;
+          const hProxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(hUrl)}`;
+          let hRes;
+          try { hRes = await fetch(hUrl); } catch (e) { hRes = await fetch(hProxy); }
+          if (hRes.ok) {
+            const hText = await hRes.text();
+            const hLines = hText.split(/\r\n|\n|\r/).filter(l => l.trim() !== '');
+            const parsedH = hLines.slice(1).map(l => {
+              const c = l.split(',');
+              return {
+                date: c[0],
+                team: c[1] || 'ALL',
+                attained: parseFloat(c[2]) || 0,
+                commit: parseFloat(c[3]) || 0,
+                likely: parseFloat(c[4]) || 0,
+                path: parseFloat(c[5]) || 0,
+                pool: parseFloat(c[6]) || 0,
+                gap: parseFloat(c[7]) || 0
+              };
+            });
+            setHistoryData(parsedH);
+          }
+        } catch (err) {
+          console.warn("Could not load history CSV:", err);
+        }
+      }
+
       setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
     } catch (err) {
       console.warn("Could not sync live deals from GSheet:", err);
@@ -362,7 +531,6 @@ export default function App() {
     const newCommit = editCommit;
 
     setDeals(prev => prev.map(d => d.id === editingDeal.id ? { ...d, acv: numAcv, commitStatus: newCommit } : d));
-
     setWriteBackStatus({ type: 'success', msg: `Updated ${editingDeal.name} locally in dashboard!` });
     setTimeout(() => setWriteBackStatus(null), 3000);
     setEditingDeal(null);
@@ -549,6 +717,14 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-6 py-6 w-full flex-1">
         {activeTab === 'overview' && (
           <div className="space-y-6">
+            {/* Executive Movement Summary (DoD & WoW with Segment Selector) */}
+            <ExecutiveMovementSummary 
+              historyData={historyData} 
+              deals={deals} 
+              targets={targets} 
+            />
+
+            {/* Overarching Pipeline Motion Selector */}
             <div className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-2">Pipeline Motion:</span>
               <div className="flex gap-1.5">
@@ -566,9 +742,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* TOP 4 SUMMARY WIDGETS */}
+            {/* Top 4 Summary Widgets */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* 1. Q4 Target */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
@@ -583,7 +758,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 2. Pipeline Generated ($ & % of target) */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
@@ -598,7 +772,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 3. Commit / Likely Path */}
               <div className="bg-white p-5 rounded-2xl border-2 border-indigo-200 shadow-sm flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
@@ -619,7 +792,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 4. Remaining Gap */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
@@ -635,7 +807,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* TEAM SPEEDOMETER DIALS */}
+            {/* Team Speedometer Dials */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               <TeamSpeedometer
                 title="ANZ ENT NB Pipe Pacing"
@@ -659,7 +831,7 @@ export default function App() {
               />
             </div>
 
-            {/* Opportunities Table */}
+            {/* Opportunities Drill-down Table */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
