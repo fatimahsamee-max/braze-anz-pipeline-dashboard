@@ -26,38 +26,6 @@ const INITIAL_TARGETS = {
   }
 };
 
-const INITIAL_DEALS = [
-  { id: '006jR000001zoLtQAI', name: 'TerryWhite - EBOS Upsell - US DC', team: 'ANZ AM', stage: 'Qualifying', acv: 28880, ae: 'Martin Brown', bdr: '', partners: 'Braze Sub Account; Eagle Eye Solutions; Gorgias; Looker; MikMak; Rokt; Twilio; Voucherify', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-11-01', motion: 'Outbound', type: 'Upsell' },
-  { id: '006jR000001IwhhQAC', name: 'Hummingbird Digital - Partner Sandbox', team: 'ANZ Scale', stage: 'Qualifying', acv: 0, ae: 'Jack McEvoy', bdr: '', partners: '', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-11-02', motion: 'Outbound', type: 'Partner Sandbox' },
-  { id: '006jR000001TWvCQAW', name: 'Blackwoods - New Business', team: 'ANZ ENT', stage: 'Qualifying', acv: 250000, ae: 'Tye Grieve', bdr: 'Tye Grieve', partners: '', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-11-03', motion: 'Inbound', type: 'New Business' },
-  { id: '006jR000001UX9FQAW', name: 'Cotality - Australia - New Business', team: 'ANZ ENT', stage: 'Qualifying', acv: 250000, ae: 'Tye Grieve', bdr: 'Tye Grieve', partners: 'Blusnow; LivePerson, Inc.; Looker; Mixpanel; Segment; Snowflake; Survicate; Twilio; Zendesk', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-11-04', motion: 'Inbound', type: 'New Business' },
-  { id: '006jR000004IRQrQAO', name: 'Colossalbet - New Business', team: 'ANZ SMB', stage: 'Qualifying', acv: 17000, ae: 'Tye Grieve', bdr: 'Tye Grieve', partners: 'AppsFlyer; Databricks', partnerAttached: true, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-11-13', motion: 'Outbound', type: 'New Business' },
-  { id: '006jR000002r2VZQAY', name: 'Our Money Market - Upsell - US LC', team: 'ANZ AM', stage: 'Qualifying', acv: 200, ae: 'Josh Lee', bdr: '', partners: 'Braze Sub Account; Rokt; Segment; Survicate', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-11-23', motion: 'Outbound', type: 'Upsell' },
-  { id: '006jR0000035OMXQA2', name: 'Dynamoney - New Business', team: 'ANZ SMB', stage: 'Qualifying', acv: 0, ae: 'Dominic Samranyke', bdr: '', partners: 'Databricks', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-11-25', motion: 'Inbound', type: 'New Business' },
-  { id: '006jR000003CPx0QAG', name: 'Linktree - Currents ME', team: 'ANZ AM', stage: 'Qualifying', acv: 0, ae: 'Tim Heller', bdr: '', partners: 'Adjust; Amplitude; DataGrail; Gorgias; Looker; Mixpanel; Segment; Snowflake; Twilio', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-11-27', motion: 'Outbound', type: 'Upsell' },
-  { id: '006jR000003ClJBQA0', name: 'Linktree - New Business', team: 'ANZ Scale', stage: 'Qualifying', acv: 0, ae: 'Tim Heller', bdr: '', partners: 'Adjust; Amplitude; Segment; Snowflake; Twilio', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-11-27', motion: 'Outbound', type: 'New Business' },
-  { id: '006jR000003dF5VQAU', name: 'White & Co. - New Business', team: 'ANZ SMB', stage: 'Qualifying', acv: 0, ae: 'Carolina Goulart', bdr: '', partners: '', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-12-03', motion: 'Inbound', type: 'New Business' },
-  { id: '006jR000003dUxNQAU', name: 'Health 2000 - New Business', team: 'ANZ SMB', stage: 'Qualifying', acv: 0, ae: 'Tye Grieve', bdr: 'Tye Grieve', partners: 'Tapcart', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-12-03', motion: 'Outbound', type: 'New Business' },
-  { id: '006jR000003itv7QAA', name: 'Western Sydney University - Donor Experience', team: 'ANZ ENT', stage: 'Qualifying', acv: 0, ae: 'Tye Grieve', bdr: 'Tye Grieve', partners: 'Gorgias; Looker; Snowflake; Survicate', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-12-03', motion: 'Inbound', type: 'New Business' },
-  { id: '006jR000004J8kNQAS', name: "Hungry Jack's - Agentic Standards - Upsell", team: 'ANZ AM', stage: 'Qualifying', acv: 7000, ae: 'Jessica Shiel', bdr: '', partners: '', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-12-03', motion: 'Outbound', type: 'Upsell' },
-  { id: '006jR000003iy0MQAQ', name: 'Rocket Mobile - New Business', team: 'ANZ SMB', stage: 'Qualifying', acv: 0, ae: 'Dominic Samranyke', bdr: '', partners: '', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-12-04', motion: 'Inbound', type: 'New Business' },
-  { id: '006jR000003zRb4QAE', name: 'Medibank - New Business', team: 'ANZ ENT', stage: 'Qualifying', acv: 50000, ae: 'Ben Gethin-Damon', bdr: '', partners: 'ActionIQ; Catch Design; Contentful; FullStory; Optimizely; Segment; Twilio', partnerAttached: true, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-12-08', motion: 'Outbound', type: 'New Business' },
-  { id: '006jR0000046WZDQA2', name: 'Ampol - New Business - Group FRP Mid 2027', team: 'ANZ ENT', stage: 'Qualifying', acv: 500000, ae: 'Tye Grieve', bdr: 'Tye Grieve', partners: 'Braze Partners; Databricks; Rokt; Sigma Computing; Twilio', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-12-08', motion: 'Outbound', type: 'New Business' },
-  { id: '006jR0000046l6nQAA', name: 'Goodman Fielder - New Business', team: 'ANZ ENT', stage: 'Qualifying', acv: 150000, ae: 'Tye Grieve', bdr: 'Tye Grieve', partners: 'Braze Partners; LivePerson; Looker', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-12-08', motion: 'Outbound', type: 'New Business' },
-  { id: '006jR0000046qjBQAQ', name: 'Autosports Group - New Business', team: 'ANZ Scale', stage: 'Qualifying', acv: 0, ae: 'Luke Morabito', bdr: 'Luke Morabito', partners: 'LivePerson; Looker; Segment; Snowflake', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-12-08', motion: 'Inbound', type: 'New Business' },
-  { id: '006jR000004SpwaQAC', name: 'Kindo - New Business', team: 'ANZ SMB', stage: 'Qualifying', acv: 0, ae: 'Dominic Samranyke', bdr: '', partners: '', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-12-13', motion: 'Outbound', type: 'New Business' },
-  { id: '006VP00000bfAanYAE', name: 'Ticketmaster - 2026 Upsell - Landing Pages', team: 'ANZ AM', stage: 'Qualifying', acv: 3000, ae: 'Bren Hartnoll', bdr: '', partners: 'LivePerson; Movable Ink', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-12-18', motion: 'Outbound', type: 'Upsell' },
-  { id: '006jR000001NCO7QAO', name: 'VGW - 2026 Upsell - Content Optimiser', team: 'ANZ AM', stage: 'Qualifying', acv: 250000, ae: 'Bren Hartnoll', bdr: '', partners: 'Adjust; Amplitude; Databricks; Digioh; EPAM; OfferFit; Optimizely; Segment; Twilio', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-12-18', motion: 'Outbound', type: 'Upsell' },
-  { id: '006VP00000axD4XYAU', name: 'Money3 - (2026 Upsell - LP Pro)', team: 'ANZ AM', stage: 'Qualifying', acv: 3000, ae: 'Bren Hartnoll', bdr: '', partners: 'FullStory; Segment; Twilio; Valimail', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-12-24', motion: 'Outbound', type: 'Upsell' },
-  { id: '006VP00000bLLSLYA4', name: 'Latrobe Health Services - New Business', team: 'ANZ ENT', stage: 'Qualifying', acv: 0, ae: 'Dominic Samranyke', bdr: '', partners: '', partnerAttached: true, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2026-12-31', motion: 'Outbound', type: 'New Business' },
-  { id: '006jR000000GwOEQA0', name: 'Boardriders Au - New Business', team: 'ANZ ENT', stage: 'Qualifying', acv: 300000, ae: 'Tye Grieve', bdr: 'Tye Grieve', partners: '', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2027-01-13', motion: 'Inbound', type: 'New Business' },
-  { id: '006jR000003coQHQAY', name: 'Telstra (UPSELL - Content Optimiser)', team: 'ANZ AM', stage: 'Qualifying', acv: 50000, ae: 'Brooke Jackson', bdr: '', partners: 'ActionIQ; AppsFlyer; Databricks; FullStory; Segment; Twilio', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2027-01-20', motion: 'Outbound', type: 'Upsell' },
-  { id: '006jR000003WZliQAG', name: 'NRMA (UPSELL - AI Suite Updates)', team: 'ANZ AM', stage: 'Qualifying', acv: 30000, ae: 'Brooke Jackson', bdr: '', partners: 'LivePerson; OfferFit; Rokt; Segment', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2027-01-26', motion: 'Outbound', type: 'Upsell' },
-  { id: '006VP00000a1m14YAA', name: 'Bupa Australia - New Business', team: 'ANZ ENT', stage: 'Qualifying', acv: 0, ae: 'Ben Gethin-Damon', bdr: '', partners: 'ActionIQ; Contentful; FullStory; Mixpanel; Optimizely; Segment; Twilio', partnerAttached: true, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2027-01-28', motion: 'Inbound', type: 'New Business' },
-  { id: '006jR000001tT0nQAE', name: 'The Oodie - New Business', team: 'ANZ SMB', stage: 'Qualifying', acv: 0, ae: 'Ryan Chua', bdr: '', partners: 'Rokt; Segment; Tapcart', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2027-01-31', motion: 'Inbound', type: 'New Business' },
-  { id: '006jR000001tYQHQA2', name: 'Betr - New Business', team: 'ANZ SMB', stage: 'Qualifying', acv: 0, ae: 'Ryan Chua', bdr: '', partners: 'Adjust; AppsFlyer; Contentful; Snowflake; Twilio', partnerAttached: false, partnerSourced: false, commitStatus: 'Non Commit', closeDate: '2027-01-31', motion: 'Outbound', type: 'New Business' }
-];
-
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [motionFilter, setMotionFilter] = useState('ALL');
@@ -65,10 +33,10 @@ export default function App() {
   const [commitFilter, setCommitFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   
-  const [deals, setDeals] = useState(INITIAL_DEALS);
+  const [deals, setDeals] = useState([]);
   const [targets, setTargets] = useState(INITIAL_TARGETS);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState('02.11.26');
+  const [isRefreshing, setIsRefreshing] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState('Loading...');
   const [writeBackStatus, setWriteBackStatus] = useState(null);
 
   const [editingDeal, setEditingDeal] = useState(null);
@@ -79,8 +47,28 @@ export default function App() {
     if (!dateStr) return 999;
     const today = new Date('2026-11-02');
     const targetDate = new Date(dateStr);
+    if (isNaN(targetDate.getTime())) return 999;
     const diffTime = targetDate - today;
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+  // Robust CSV line parser handling quotes and commas
+  const parseCSVRow = (text) => {
+    let p = '', row = [''], r = 0, q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (c === '"') {
+        if (q && p === '"') { row[r] += '"'; }
+        q = !q;
+      } else if (c === ',' && !q) {
+        r++;
+        row[r] = '';
+      } else {
+        row[r] += c;
+      }
+      p = c;
+    }
+    return row.map(v => v ? v.trim().replace(/^"|"$/g, '') : '');
   };
 
   const fetchLiveData = async () => {
@@ -90,16 +78,23 @@ export default function App() {
     const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(rawUrl)}`;
 
     try {
-      let res = await fetch(proxyUrl);
-      if (!res.ok) res = await fetch(rawUrl);
-      const csvText = await res.text();
-      const lines = csvText.split(/\r\n|\n|\r/);
+      let res;
+      try {
+        res = await fetch(rawUrl);
+        if (!res.ok) throw new Error('Direct fetch failed');
+      } catch (e) {
+        res = await fetch(proxyUrl);
+      }
 
-      if (lines.length > 4) {
-        const row4 = lines[4].split(',').map(c => c.replace(/["$]/g, '').trim());
-        const totalTarget = parseFloat(row4[1]?.replace(/[M,]/gi, '')) * 1000000 || 18710000;
-        const inTarget = parseFloat(row4[5]?.replace(/[M,]/gi, '')) * 1000000 || 10000000;
-        const outTarget = parseFloat(row4[9]?.replace(/[M,]/gi, '')) * 1000000 || 10820000;
+      const csvText = await res.text();
+      const rawLines = csvText.split(/\r\n|\n|\r/).filter(l => l.trim() !== '');
+
+      // 1. Parse Targets (Row 5 / index 4)
+      if (rawLines.length > 4) {
+        const row4 = parseCSVRow(rawLines[4]);
+        const totalTarget = parseFloat(row4[1]?.replace(/[M,$]/gi, '')) * 1000000 || 18710000;
+        const inTarget = parseFloat(row4[5]?.replace(/[M,$]/gi, '')) * 1000000 || 10000000;
+        const outTarget = parseFloat(row4[9]?.replace(/[M,$]/gi, '')) * 1000000 || 10820000;
         
         setTargets(prev => ({
           ...prev,
@@ -109,13 +104,96 @@ export default function App() {
         }));
       }
 
+      // 2. Locate Opportunity Header Row (usually Row 32 / index 31)
+      let headerIdx = -1;
+      for (let i = 0; i < Math.min(rawLines.length, 50); i++) {
+        const lineLower = rawLines[i].toLowerCase();
+        if (lineLower.includes('opportunity id') || (lineLower.includes('opportunity') && lineLower.includes('stage'))) {
+          headerIdx = i;
+          break;
+        }
+      }
+
+      // 3. Parse all live opportunities below header
+      if (headerIdx !== -1) {
+        const headers = parseCSVRow(rawLines[headerIdx]).map(h => h.toLowerCase());
+        
+        const getIdx = (keys) => {
+          for (const k of keys) {
+            const found = headers.findIndex(h => h.includes(k));
+            if (found !== -1) return found;
+          }
+          return -1;
+        };
+
+        const idCol = getIdx(['opportunity id', 'id']);
+        const nameCol = getIdx(['opportunity name', 'name']);
+        const teamCol = getIdx(['team', 'territory']);
+        const stageCol = headers.findIndex(h => h === 'stage');
+        const acvCol = getIdx(['acv', 'amount']);
+        const aeCol = getIdx(['ae', 'owner']);
+        const bdrCol = getIdx(['bdr']);
+        const partnersCol = headers.findIndex(h => h.includes('partner') && !h.includes('attach') && !h.includes('source'));
+        const attachedCol = getIdx(['attached']);
+        const commitCol = getIdx(['commit', 'likelihood']);
+        const dateCol = getIdx(['close date']);
+        const motionCol = getIdx(['inbound/outbound', 'motion']);
+        const typeCol = headers.findIndex(h => h === 'type');
+
+        const parsedDeals = [];
+
+        for (let i = headerIdx + 1; i < rawLines.length; i++) {
+          const cols = parseCSVRow(rawLines[i]);
+          const oppId = cols[idCol !== -1 ? idCol : 0];
+          let oppName = cols[nameCol !== -1 ? nameCol : 1];
+
+          if (!oppName || oppName.toLowerCase().includes('total')) continue;
+
+          // Strip formula wrapper if exported as =HYPERLINK("url", "name")
+          if (oppName.includes('HYPERLINK(')) {
+            const match = oppName.match(/,"([^"]+)"\)/);
+            if (match) oppName = match[1];
+          }
+
+          const rawAcv = cols[acvCol !== -1 ? acvCol : 4] || '0';
+          const cleanAcv = parseFloat(rawAcv.replace(/[^0-9.-]/g, '')) || 0;
+          const attachedVal = (cols[attachedCol !== -1 ? attachedCol : 8] || '').toLowerCase();
+          const isAttached = attachedVal === 'yes' || attachedVal === '1' || attachedVal === 'true';
+
+          parsedDeals.push({
+            id: oppId || `deal-${i}`,
+            name: oppName,
+            team: cols[teamCol !== -1 ? teamCol : 2] || 'ANZ ENT',
+            stage: cols[stageCol !== -1 ? stageCol : 3] || 'Qualifying',
+            acv: cleanAcv,
+            ae: cols[aeCol !== -1 ? aeCol : 5] || 'Unassigned',
+            bdr: cols[bdrCol !== -1 ? bdrCol : 6] || '',
+            partners: cols[partnersCol !== -1 ? partnersCol : 7] || '',
+            partnerAttached: isAttached,
+            commitStatus: cols[commitCol !== -1 ? commitCol : 16] || 'Non Commit',
+            closeDate: cols[dateCol !== -1 ? dateCol : 23] || '',
+            motion: cols[motionCol !== -1 ? motionCol : 34] || 'Outbound',
+            type: cols[typeCol !== -1 ? typeCol : 27] || 'New Business'
+          });
+        }
+
+        if (parsedDeals.length > 0) {
+          setDeals(parsedDeals);
+        }
+      }
+
       setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
     } catch (err) {
-      console.warn("Could not sync live targets, using state:", err);
+      console.warn("Could not sync live deals from GSheet:", err);
     } finally {
       setIsRefreshing(false);
     }
   };
+
+  // Automatically fetch fresh data from Google Sheet on initial mount
+  useEffect(() => {
+    fetchLiveData();
+  }, []);
 
   const handleSaveEdit = async () => {
     if (!editingDeal) return;
@@ -125,7 +203,7 @@ export default function App() {
     setDeals(prev => prev.map(d => d.id === editingDeal.id ? { ...d, acv: numAcv, commitStatus: newCommit } : d));
 
     if (!WEB_APP_WRITEBACK_URL) {
-      setWriteBackStatus({ type: 'success', msg: 'Updated locally in app! (Deploy Web App URL to write directly to GSheet)' });
+      setWriteBackStatus({ type: 'success', msg: 'Updated locally in app! (Set WEB_APP_WRITEBACK_URL to sync to Sheet)' });
       setTimeout(() => setWriteBackStatus(null), 4000);
       setEditingDeal(null);
       return;
@@ -159,7 +237,7 @@ export default function App() {
       relevantDeals = deals.filter(d => d.motion === motionFilter);
     }
 
-    const qualifyingPipe = relevantDeals.filter(d => d.stage === 'Qualifying').reduce((sum, d) => sum + d.acv, 0);
+    const qualifyingPipe = relevantDeals.filter(d => d.stage === 'Qualifying' || d.stage === 'Discovery+').reduce((sum, d) => sum + d.acv, 0);
     const prospectingPipe = relevantDeals.filter(d => d.stage.toLowerCase().includes('prospect')).reduce((sum, d) => sum + d.acv, 0);
     const totalWorkingPool = qualifyingPipe + prospectingPipe;
 
@@ -266,7 +344,7 @@ export default function App() {
 
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 bg-[#2D1B54] px-3 py-1.5 rounded-lg border border-indigo-900/50 text-xs text-indigo-200">
-              <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span className={`inline-block w-2 h-2 rounded-full ${isRefreshing ? 'bg-amber-400' : 'bg-emerald-400'} animate-pulse`}></span>
               Last updated: <span className="font-medium text-white">{lastUpdated}</span>
             </div>
             <button 
@@ -537,29 +615,26 @@ export default function App() {
               <p className="text-xs text-slate-500 mb-4">Ranked by total Working Pipeline ACV generated in Q4</p>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 p-4 rounded-xl relative">
-                  <span className="absolute top-3 right-3 text-2xl font-black text-amber-300">#1</span>
-                  <div className="text-xs font-bold text-amber-800">Top Generator</div>
-                  <div className="text-lg font-extrabold text-slate-900 mt-1">Tye Grieve</div>
-                  <div className="text-2xl font-black text-amber-600 mt-2">$1,467,000</div>
-                  <div className="text-xs text-slate-600 mt-1">6 Qualifying Opportunities</div>
-                </div>
-
-                <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl relative">
-                  <span className="absolute top-3 right-3 text-2xl font-black text-slate-300">#2</span>
-                  <div className="text-xs font-bold text-slate-600">Second Pacing</div>
-                  <div className="text-lg font-extrabold text-slate-900 mt-1">Bren Hartnoll</div>
-                  <div className="text-2xl font-black text-indigo-600 mt-2">$278,000</div>
-                  <div className="text-xs text-slate-600 mt-1">3 Active Upsells</div>
-                </div>
-
-                <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl relative">
-                  <span className="absolute top-3 right-3 text-2xl font-black text-slate-300">#3</span>
-                  <div className="text-xs font-bold text-slate-600">Third Pacing</div>
-                  <div className="text-lg font-extrabold text-slate-900 mt-1">Brooke Jackson</div>
-                  <div className="text-2xl font-black text-indigo-600 mt-2">$80,000</div>
-                  <div className="text-xs text-slate-600 mt-1">3 Qualifying Opportunities</div>
-                </div>
+                {(() => {
+                  const repTotals = {};
+                  deals.forEach(d => {
+                    const rep = d.ae || 'Unassigned';
+                    if (!repTotals[rep]) repTotals[rep] = { name: rep, acv: 0, count: 0 };
+                    repTotals[rep].acv += d.acv;
+                    repTotals[rep].count += 1;
+                  });
+                  const sortedReps = Object.values(repTotals).sort((a, b) => b.acv - a.acv).slice(0, 3);
+                  
+                  return sortedReps.map((r, idx) => (
+                    <div key={r.name} className={`${idx === 0 ? 'bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200' : 'bg-slate-50 border-slate-200'} border p-4 rounded-xl relative`}>
+                      <span className={`absolute top-3 right-3 text-2xl font-black ${idx === 0 ? 'text-amber-300' : 'text-slate-300'}`}>#{idx + 1}</span>
+                      <div className={`text-xs font-bold ${idx === 0 ? 'text-amber-800' : 'text-slate-600'}`}>{idx === 0 ? 'Top Generator' : idx === 1 ? 'Second Pacing' : 'Third Pacing'}</div>
+                      <div className="text-lg font-extrabold text-slate-900 mt-1">{r.name}</div>
+                      <div className={`text-2xl font-black ${idx === 0 ? 'text-amber-600' : 'text-indigo-600'} mt-2`}>${r.acv.toLocaleString()}</div>
+                      <div className="text-xs text-slate-600 mt-1">{r.count} Opportunities</div>
+                    </div>
+                  ));
+                })()}
               </div>
             </div>
           </div>
@@ -743,7 +818,7 @@ export default function App() {
                                     {d.name}
                                   </a>
                                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border shrink-0 ${d.badgeColor}`}>
-                                    {d.days}d to close
+                                    {d.days < 0 ? 'Overdue' : `${d.days}d to close`}
                                   </span>
                                 </div>
                                 <div className="flex items-center justify-between text-xs text-slate-600">
