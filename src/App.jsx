@@ -1,1 +1,1 @@
-const WEB_APP_WRITEBACK_URL = "";
+export default function App() {
