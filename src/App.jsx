@@ -25,27 +25,27 @@ const INITIAL_TARGETS = {
   }
 };
 
-// Reusable Speedometer Component with Team Target, Needle, and Coverage Breakdown
+// Speedometer Gauge Component with Full Target, Live Dial & Coverage Bar
 function TeamSpeedometer({ title, target, deals }) {
   const teamPool = deals.reduce((sum, d) => sum + d.acv, 0);
-  const attained = deals.filter(d => d.commitStatus === 'Attained').reduce((sum, d) => sum + d.acv, 0);
+  const attained = deals.filter(d => d.commitStatus === 'Attained' || d.stage === 'Closed Won').reduce((sum, d) => sum + d.acv, 0);
   const commit = deals.filter(d => d.commitStatus === 'Commit').reduce((sum, d) => sum + d.acv, 0);
   const likely = deals.filter(d => d.commitStatus === 'Likely').reduce((sum, d) => sum + d.acv, 0);
   const path = commit + (likely * 0.5);
   
   const gap = Math.max(0, target - attained);
-  const percentage = target > 0 ? Math.min(100, Math.round((attained / target) * 100)) : 0;
+  // Dial needle tracks total committed/progressed pipeline toward target
+  const displayVal = attained > 0 ? attained : path;
+  const percentage = target > 0 ? Math.min(100, Math.round((displayVal / target) * 100)) : 0;
   const coveragePercent = target > 0 ? Math.min(100, Math.round((teamPool / target) * 100)) : 0;
   const pathPercent = target > 0 ? Math.min(100, Math.round((path / target) * 100)) : 0;
 
-  // Gauge Dimensions
   const radius = 80;
   const strokeWidth = 14;
   const cx = 110;
   const cy = 95;
 
-  // Needle angle (-90 to +90 degrees)
-  const clampedVal = Math.min(Math.max(attained, 0), target);
+  const clampedVal = Math.min(Math.max(displayVal, 0), target);
   const ratio = target > 0 ? clampedVal / target : 0;
   const needleAngle = -90 + ratio * 180;
 
@@ -84,10 +84,8 @@ function TeamSpeedometer({ title, target, deals }) {
         </span>
       </div>
 
-      {/* Speedometer Dial */}
       <div className="relative flex flex-col items-center justify-center my-1">
         <svg viewBox="0 0 220 115" className="w-full max-w-[210px] overflow-visible">
-          {/* Segment 1: Red (0% - 45%) */}
           <path
             d={`M ${cx - radius} ${cy} A ${radius} ${radius} 0 0 1 ${cx + radius * Math.cos(Math.PI * (1 - 0.45))} ${cy - radius * Math.sin(Math.PI * (1 - 0.45))}`}
             fill="none"
@@ -95,14 +93,12 @@ function TeamSpeedometer({ title, target, deals }) {
             strokeWidth={strokeWidth}
             strokeLinecap="round"
           />
-          {/* Segment 2: Amber (45% - 80%) */}
           <path
             d={`M ${cx + radius * Math.cos(Math.PI * (1 - 0.45))} ${cy - radius * Math.sin(Math.PI * (1 - 0.45))} A ${radius} ${radius} 0 0 1 ${cx + radius * Math.cos(Math.PI * (1 - 0.80))} ${cy - radius * Math.sin(Math.PI * (1 - 0.80))}`}
             fill="none"
             stroke="#F2A03F"
             strokeWidth={strokeWidth}
           />
-          {/* Segment 3: Teal/Green (80% - 100%) */}
           <path
             d={`M ${cx + radius * Math.cos(Math.PI * (1 - 0.80))} ${cy - radius * Math.sin(Math.PI * (1 - 0.80))} A ${radius} ${radius} 0 0 1 ${cx + radius} ${cy}`}
             fill="none"
@@ -127,7 +123,6 @@ function TeamSpeedometer({ title, target, deals }) {
             </g>
           ))}
 
-          {/* Needle */}
           <g transform={`rotate(${needleAngle}, ${cx}, ${cy})`}>
             <polygon
               points={`${cx - 2},${cy} ${cx - 0.5},${cy - radius + 4} ${cx + 0.5},${cy - radius + 4} ${cx + 2},${cy}`}
@@ -139,18 +134,16 @@ function TeamSpeedometer({ title, target, deals }) {
         </svg>
 
         <div className={`text-center font-black text-lg mt-0.5 ${statusColor}`}>
-          {formatShort(attained)} ({percentage}%)
+          {formatShort(displayVal)} ({percentage}%)
         </div>
       </div>
 
-      {/* Coverage Progress Bar with Commit / Likely & Gap Breakdown */}
       <div className="pt-2 border-t border-slate-100 space-y-1.5">
         <div className="flex justify-between items-center text-[10px] font-semibold text-slate-600">
           <span>Working Coverage: {coveragePercent}%</span>
           <span>Gap: {formatShort(gap)}</span>
         </div>
         
-        {/* Multi-segmented bar: Commit (emerald), Likely (indigo), Uncommitted Pool (slate) */}
         <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden flex">
           <div 
             className="bg-emerald-500 h-full transition-all duration-500" 
@@ -164,8 +157,8 @@ function TeamSpeedometer({ title, target, deals }) {
           />
           <div 
             className="bg-slate-300 h-full transition-all duration-500" 
-            style={{ width: `${Math.min(100, target > 0 ? ((teamPool - commit - likely) / target) * 100 : 0)}%` }} 
-            title={`Other Pipeline: ${formatShort(teamPool - commit - likely)}`}
+            style={{ width: `${Math.min(100, target > 0 ? Math.max(0, (teamPool - commit - likely) / target) * 100 : 0)}%` }} 
+            title={`Other Pipeline: ${formatShort(Math.max(0, teamPool - commit - likely))}`}
           />
         </div>
 
@@ -224,36 +217,45 @@ export default function App() {
 
   const fetchLiveData = async () => {
     setIsRefreshing(true);
-    const separator = SHEET_CSV_URL.includes('?') ? '&' : '?';
-    const freshUrl = `${SHEET_CSV_URL}${separator}_t=${Date.now()}`;
+    const timestamp = Date.now();
+    const rawUrl = `${SHEET_CSV_URL}&_t=${timestamp}`;
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(rawUrl)}`;
 
     try {
-      const res = await fetch(freshUrl);
-      if (!res.ok) throw new Error(`Direct CSV fetch failed: ${res.statusText}`);
+      let res;
+      try {
+        res = await fetch(rawUrl);
+        if (!res.ok) throw new Error('Direct fetch failed');
+      } catch (e) {
+        // Fallback to proxy if direct CORS is blocked by browser
+        res = await fetch(proxyUrl);
+      }
 
       const csvText = await res.text();
       const rawLines = csvText.split(/\r\n|\n|\r/).filter(l => l.trim() !== '');
 
-      // 1. Parse Targets (Row 5 / index 4)
-      if (rawLines.length > 4) {
-        const row4 = parseCSVRow(rawLines[4]);
-        const totalTarget = parseFloat(row4[1]?.replace(/[M,$]/gi, '')) * 1000000 || 18710000;
-        const inTarget = parseFloat(row4[5]?.replace(/[M,$]/gi, '')) * 1000000 || 10000000;
-        const outTarget = parseFloat(row4[9]?.replace(/[M,$]/gi, '')) * 1000000 || 10820000;
-        
-        setTargets(prev => ({
-          ...prev,
-          total: totalTarget,
-          inbound: inTarget,
-          outbound: outTarget
-        }));
+      // 1. Locate Top Targets Summary Row
+      for (let i = 0; i < Math.min(rawLines.length, 15); i++) {
+        const line = rawLines[i].toLowerCase();
+        if (line.includes('q4 target') || line.includes('pg attainment')) {
+          const nextRow = parseCSVRow(rawLines[i + 1] || '');
+          // Extract target numbers from row
+          const totalMatch = nextRow.find(c => c.includes('$') && c.includes('M'));
+          if (totalMatch) {
+            const totalTarget = parseFloat(totalMatch.replace(/[M,$]/gi, '')) * 1000000;
+            if (!isNaN(totalTarget) && totalTarget > 0) {
+              setTargets(prev => ({ ...prev, total: totalTarget }));
+            }
+          }
+          break;
+        }
       }
 
       // 2. Locate Opportunity Header Row
       let headerIdx = -1;
       for (let i = 0; i < Math.min(rawLines.length, 50); i++) {
         const lineLower = rawLines[i].toLowerCase();
-        if (lineLower.includes('opportunity id') || (lineLower.includes('opportunity') && lineLower.includes('stage'))) {
+        if (lineLower.includes('opportunity') || lineLower.includes('account / opportunity')) {
           headerIdx = i;
           break;
         }
@@ -272,15 +274,16 @@ export default function App() {
         };
 
         const idCol = getIdx(['opportunity id', 'id']);
-        const nameCol = getIdx(['opportunity name', 'name']);
+        const nameCol = getIdx(['account / opportunity', 'opportunity name', 'name']);
         const teamCol = getIdx(['team', 'territory']);
         const stageCol = headers.findIndex(h => h === 'stage');
         const acvCol = getIdx(['acv', 'amount']);
         const aeCol = getIdx(['ae', 'owner']);
         const bdrCol = getIdx(['bdr']);
         const partnersCol = headers.findIndex(h => h.includes('partner') && !h.includes('attach') && !h.includes('source'));
-        const attachedCol = getIdx(['attached']);
-        const commitCol = getIdx(['commit', 'likelihood']);
+        const attachedCol = getIdx(['partner attached', 'attached']);
+        // Match both 'likelihood' and sheet typo 'liklihood'
+        const commitCol = getIdx(['liklihood', 'likelihood', 'stage 1 commit', 'commit']);
         const dateCol = getIdx(['close date']);
         const motionCol = getIdx(['inbound/outbound', 'motion']);
         const typeCol = headers.findIndex(h => h === 'type');
@@ -304,6 +307,10 @@ export default function App() {
           const attachedVal = (cols[attachedCol !== -1 ? attachedCol : 8] || '').toLowerCase();
           const isAttached = attachedVal === 'yes' || attachedVal === '1' || attachedVal === 'true';
 
+          // Extract Commit status (supports column 18 'Liklihood to move to Pipe')
+          let rawCommit = cols[commitCol !== -1 ? commitCol : 18] || 'Non Commit';
+          if (!rawCommit || rawCommit.trim() === '') rawCommit = 'Non Commit';
+
           parsedDeals.push({
             id: oppId || `deal-${i}`,
             name: oppName,
@@ -314,10 +321,10 @@ export default function App() {
             bdr: cols[bdrCol !== -1 ? bdrCol : 6] || '',
             partners: cols[partnersCol !== -1 ? partnersCol : 7] || '',
             partnerAttached: isAttached,
-            commitStatus: cols[commitCol !== -1 ? commitCol : 16] || 'Non Commit',
-            closeDate: cols[dateCol !== -1 ? dateCol : 23] || '',
-            motion: cols[motionCol !== -1 ? motionCol : 34] || 'Outbound',
-            type: cols[typeCol !== -1 ? typeCol : 27] || 'New Business'
+            commitStatus: rawCommit,
+            closeDate: cols[dateCol !== -1 ? dateCol : 20] || '',
+            motion: cols[motionCol !== -1 ? motionCol : 22] || 'Outbound',
+            type: cols[typeCol !== -1 ? typeCol : 23] || 'New Business'
           });
         }
 
@@ -360,7 +367,7 @@ export default function App() {
     const prospectingPipe = relevantDeals.filter(d => d.stage.toLowerCase().includes('prospect')).reduce((sum, d) => sum + d.acv, 0);
     const totalWorkingPool = qualifyingPipe + prospectingPipe;
 
-    const attainedPipe = relevantDeals.filter(d => d.commitStatus === 'Attained').reduce((sum, d) => sum + d.acv, 0);
+    const attainedPipe = relevantDeals.filter(d => d.commitStatus === 'Attained' || d.stage === 'Closed Won').reduce((sum, d) => sum + d.acv, 0);
     const commitPipe = relevantDeals.filter(d => d.commitStatus === 'Commit').reduce((sum, d) => sum + d.acv, 0);
     const likelyPipe = relevantDeals.filter(d => d.commitStatus === 'Likely').reduce((sum, d) => sum + d.acv, 0);
     const pathPipe = commitPipe + (likelyPipe * 0.5);
@@ -548,7 +555,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* TOP 4 SPECIFIED WIDGETS */}
+            {/* TOP 4 SUMMARY WIDGETS */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* 1. Q4 Target */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
@@ -565,7 +572,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 2. Pipeline Generated in $ and % of Target in Subtext */}
+              {/* 2. Pipeline Generated ($ & % of target) */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
@@ -580,7 +587,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 3. Commit / Likely Path with Working Pool, Qualifying & Prospecting in Subtext */}
+              {/* 3. Commit / Likely Path */}
               <div className="bg-white p-5 rounded-2xl border-2 border-indigo-200 shadow-sm flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
@@ -617,30 +624,23 @@ export default function App() {
               </div>
             </div>
 
-            {/* 4 SPEEDOMETER DIALS WITH FULL TARGET, PACING NEEDLE & COVERAGE BAR */}
+            {/* TEAM SPEEDOMETER DIALS */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-              {/* ANZ ENT */}
               <TeamSpeedometer
                 title="ANZ ENT NB Pipe Pacing"
                 target={targets.teams['ANZ ENT']}
                 deals={deals.filter(d => d.team && d.team.includes('ENT'))}
               />
-
-              {/* ANZ Scale */}
               <TeamSpeedometer
                 title="ANZ Scale NB Pipe Pacing"
                 target={targets.teams['ANZ Scale']}
                 deals={deals.filter(d => d.team && d.team.includes('Scale'))}
               />
-
-              {/* ANZ SMB */}
               <TeamSpeedometer
                 title="ANZ SMB NB Pipe Pacing"
                 target={targets.teams['ANZ SMB']}
                 deals={deals.filter(d => d.team && d.team.includes('SMB'))}
               />
-
-              {/* ANZ AM */}
               <TeamSpeedometer
                 title="ANZ AM NB Pipe Pacing"
                 target={targets.teams['ANZ AM']}
@@ -862,7 +862,6 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-                {/* TIER 1 SECTION */}
                 <div className="space-y-3">
                   {(() => {
                     const t1Deals = priorityDeals.filter(d => d.tier && d.tier.includes('Tier 1'));
@@ -926,7 +925,6 @@ export default function App() {
                   })()}
                 </div>
 
-                {/* TIER 2 SECTION */}
                 <div className="space-y-3">
                   {(() => {
                     const t2Deals = priorityDeals.filter(d => d.tier && d.tier.includes('Tier 2'));
