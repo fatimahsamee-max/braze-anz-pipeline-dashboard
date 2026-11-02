@@ -12,7 +12,7 @@ import {
 } from 'recharts';
 
 const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/109jy9sFdx0s0aZq5CdxbgQnMH5INkUUKvjvhTYoZ8OA/export?format=csv&gid=2048510077";
-const WEB_APP_WRITEBACK_URL = ""; 
+const WEB_APP_WRITEBACK_URL = "https://script.google.com/macros/s/AKfycbxRnaoBJbf4B_dKDoeFDXAy2ZhJ32u9eQ1yPsz1YEHK36JEVmEPDOVW9PxoI_fMinzN/exec"; 
 
 const INITIAL_TARGETS = {
   total: 18710000,
