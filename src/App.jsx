@@ -25,17 +25,23 @@ const INITIAL_TARGETS = {
   }
 };
 
-// Speedometer Gauge Component with Full Target, Live Dial & Coverage Bar
+// Speedometer Gauge Component: needle strictly moves with Pipeline Generation (Attained)
 function TeamSpeedometer({ title, target, deals }) {
   const teamPool = deals.reduce((sum, d) => sum + d.acv, 0);
-  const attained = deals.filter(d => d.commitStatus === 'Attained' || d.stage === 'Closed Won').reduce((sum, d) => sum + d.acv, 0);
+  
+  // Pipeline Generation (Attained): deals marked as Attained or Closed Won
+  const attained = deals
+    .filter(d => d.commitStatus === 'Attained' || d.stage === 'Closed Won')
+    .reduce((sum, d) => sum + d.acv, 0);
+
   const commit = deals.filter(d => d.commitStatus === 'Commit').reduce((sum, d) => sum + d.acv, 0);
   const likely = deals.filter(d => d.commitStatus === 'Likely').reduce((sum, d) => sum + d.acv, 0);
   const path = commit + (likely * 0.5);
   
   const gap = Math.max(0, target - attained);
-  // Dial needle tracks total committed/progressed pipeline toward target
-  const displayVal = attained > 0 ? attained : path;
+  
+  // Strict Attained Pacing: Needle and % ONLY move with attained pipeline
+  const displayVal = attained;
   const percentage = target > 0 ? Math.min(100, Math.round((displayVal / target) * 100)) : 0;
   const coveragePercent = target > 0 ? Math.min(100, Math.round((teamPool / target) * 100)) : 0;
   const pathPercent = target > 0 ? Math.min(100, Math.round((path / target) * 100)) : 0;
@@ -45,6 +51,7 @@ function TeamSpeedometer({ title, target, deals }) {
   const cx = 110;
   const cy = 95;
 
+  // Clamped angle strictly follows Pipeline Generation
   const clampedVal = Math.min(Math.max(displayVal, 0), target);
   const ratio = target > 0 ? clampedVal / target : 0;
   const needleAngle = -90 + ratio * 180;
@@ -84,6 +91,7 @@ function TeamSpeedometer({ title, target, deals }) {
         </span>
       </div>
 
+      {/* Speedometer Dial (Moved only by Attained PG) */}
       <div className="relative flex flex-col items-center justify-center my-1">
         <svg viewBox="0 0 220 115" className="w-full max-w-[210px] overflow-visible">
           <path
@@ -123,6 +131,7 @@ function TeamSpeedometer({ title, target, deals }) {
             </g>
           ))}
 
+          {/* Needle strictly pinned to attained PG */}
           <g transform={`rotate(${needleAngle}, ${cx}, ${cy})`}>
             <polygon
               points={`${cx - 2},${cy} ${cx - 0.5},${cy - radius + 4} ${cx + 0.5},${cy - radius + 4} ${cx + 2},${cy}`}
@@ -134,10 +143,11 @@ function TeamSpeedometer({ title, target, deals }) {
         </svg>
 
         <div className={`text-center font-black text-lg mt-0.5 ${statusColor}`}>
-          {formatShort(displayVal)} ({percentage}%)
+          {formatShort(attained)} ({percentage}%)
         </div>
       </div>
 
+      {/* Coverage Progress Bar showing working pool breakdown */}
       <div className="pt-2 border-t border-slate-100 space-y-1.5">
         <div className="flex justify-between items-center text-[10px] font-semibold text-slate-600">
           <span>Working Coverage: {coveragePercent}%</span>
@@ -170,6 +180,7 @@ function TeamSpeedometer({ title, target, deals }) {
     </div>
   );
 }
+
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
