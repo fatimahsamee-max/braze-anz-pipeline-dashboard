@@ -20,10 +20,163 @@ const INITIAL_TARGETS = {
   teams: {
     'ANZ ENT': 9650000,
     'ANZ Scale': 4980000,
-    'ANZ AM': 2800000,
-    'ANZ SMB': 1280000
+    'ANZ SMB': 1280000,
+    'ANZ AM': 2800000
   }
 };
+
+// Reusable Speedometer Component with Team Target, Needle, and Coverage Breakdown
+function TeamSpeedometer({ title, target, deals }) {
+  const teamPool = deals.reduce((sum, d) => sum + d.acv, 0);
+  const attained = deals.filter(d => d.commitStatus === 'Attained').reduce((sum, d) => sum + d.acv, 0);
+  const commit = deals.filter(d => d.commitStatus === 'Commit').reduce((sum, d) => sum + d.acv, 0);
+  const likely = deals.filter(d => d.commitStatus === 'Likely').reduce((sum, d) => sum + d.acv, 0);
+  const path = commit + (likely * 0.5);
+  
+  const gap = Math.max(0, target - attained);
+  const percentage = target > 0 ? Math.min(100, Math.round((attained / target) * 100)) : 0;
+  const coveragePercent = target > 0 ? Math.min(100, Math.round((teamPool / target) * 100)) : 0;
+  const pathPercent = target > 0 ? Math.min(100, Math.round((path / target) * 100)) : 0;
+
+  // Gauge Dimensions
+  const radius = 80;
+  const strokeWidth = 14;
+  const cx = 110;
+  const cy = 95;
+
+  // Needle angle (-90 to +90 degrees)
+  const clampedVal = Math.min(Math.max(attained, 0), target);
+  const ratio = target > 0 ? clampedVal / target : 0;
+  const needleAngle = -90 + ratio * 180;
+
+  const formatShort = (num) => {
+    if (num >= 1000000) return `USD ${(num / 1000000).toFixed(1)}M`;
+    if (num >= 1000) return `USD ${Math.round(num / 1000)}K`;
+    return `USD ${Math.round(num)}`;
+  };
+
+  const ticks = [0, 0.25, 0.5, 0.75, 1.0].map((t) => {
+    const angleRad = Math.PI * (1 - t);
+    const textR = radius - 20;
+    const tickR1 = radius - 7;
+    const tickR2 = radius - 1;
+    return {
+      label: formatShort(target * t),
+      x1: cx + tickR1 * Math.cos(angleRad),
+      y1: cy - tickR1 * Math.sin(angleRad),
+      x2: cx + tickR2 * Math.cos(angleRad),
+      y2: cy - tickR2 * Math.sin(angleRad),
+      tx: cx + textR * Math.cos(angleRad),
+      ty: cy - textR * Math.sin(angleRad),
+    };
+  });
+
+  let statusColor = "text-rose-600";
+  if (percentage >= 70) statusColor = "text-emerald-600";
+  else if (percentage >= 40) statusColor = "text-amber-500";
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col justify-between">
+      <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+        <h3 className="font-bold text-slate-800 text-xs tracking-tight">{title}</h3>
+        <span className="text-[10px] font-semibold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+          Target: {formatShort(target)}
+        </span>
+      </div>
+
+      {/* Speedometer Dial */}
+      <div className="relative flex flex-col items-center justify-center my-1">
+        <svg viewBox="0 0 220 115" className="w-full max-w-[210px] overflow-visible">
+          {/* Segment 1: Red (0% - 45%) */}
+          <path
+            d={`M ${cx - radius} ${cy} A ${radius} ${radius} 0 0 1 ${cx + radius * Math.cos(Math.PI * (1 - 0.45))} ${cy - radius * Math.sin(Math.PI * (1 - 0.45))}`}
+            fill="none"
+            stroke="#BD322B"
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+          />
+          {/* Segment 2: Amber (45% - 80%) */}
+          <path
+            d={`M ${cx + radius * Math.cos(Math.PI * (1 - 0.45))} ${cy - radius * Math.sin(Math.PI * (1 - 0.45))} A ${radius} ${radius} 0 0 1 ${cx + radius * Math.cos(Math.PI * (1 - 0.80))} ${cy - radius * Math.sin(Math.PI * (1 - 0.80))}`}
+            fill="none"
+            stroke="#F2A03F"
+            strokeWidth={strokeWidth}
+          />
+          {/* Segment 3: Teal/Green (80% - 100%) */}
+          <path
+            d={`M ${cx + radius * Math.cos(Math.PI * (1 - 0.80))} ${cy - radius * Math.sin(Math.PI * (1 - 0.80))} A ${radius} ${radius} 0 0 1 ${cx + radius} ${cy}`}
+            fill="none"
+            stroke="#006D68"
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+          />
+
+          {ticks.map((t, idx) => (
+            <g key={idx}>
+              <line x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2} stroke="#CBD5E1" strokeWidth="1.5" />
+              <text
+                x={t.tx}
+                y={t.ty + (idx === 0 || idx === 4 ? 4 : 0)}
+                textAnchor="middle"
+                fontSize="6"
+                fill="#64748B"
+                fontWeight="500"
+              >
+                {t.label}
+              </text>
+            </g>
+          ))}
+
+          {/* Needle */}
+          <g transform={`rotate(${needleAngle}, ${cx}, ${cy})`}>
+            <polygon
+              points={`${cx - 2},${cy} ${cx - 0.5},${cy - radius + 4} ${cx + 0.5},${cy - radius + 4} ${cx + 2},${cy}`}
+              fill="#1E293B"
+            />
+            <circle cx={cx} cy={cy} r="5.5" fill="#1E293B" />
+            <circle cx={cx} cy={cy} r="2" fill="#FFFFFF" />
+          </g>
+        </svg>
+
+        <div className={`text-center font-black text-lg mt-0.5 ${statusColor}`}>
+          {formatShort(attained)} ({percentage}%)
+        </div>
+      </div>
+
+      {/* Coverage Progress Bar with Commit / Likely & Gap Breakdown */}
+      <div className="pt-2 border-t border-slate-100 space-y-1.5">
+        <div className="flex justify-between items-center text-[10px] font-semibold text-slate-600">
+          <span>Working Coverage: {coveragePercent}%</span>
+          <span>Gap: {formatShort(gap)}</span>
+        </div>
+        
+        {/* Multi-segmented bar: Commit (emerald), Likely (indigo), Uncommitted Pool (slate) */}
+        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden flex">
+          <div 
+            className="bg-emerald-500 h-full transition-all duration-500" 
+            style={{ width: `${Math.min(100, target > 0 ? (commit / target) * 100 : 0)}%` }} 
+            title={`Commit: ${formatShort(commit)}`}
+          />
+          <div 
+            className="bg-indigo-500 h-full transition-all duration-500" 
+            style={{ width: `${Math.min(100, target > 0 ? (likely / target) * 100 : 0)}%` }} 
+            title={`Likely: ${formatShort(likely)}`}
+          />
+          <div 
+            className="bg-slate-300 h-full transition-all duration-500" 
+            style={{ width: `${Math.min(100, target > 0 ? ((teamPool - commit - likely) / target) * 100 : 0)}%` }} 
+            title={`Other Pipeline: ${formatShort(teamPool - commit - likely)}`}
+          />
+        </div>
+
+        <div className="flex justify-between items-center text-[9.5px] text-slate-500 pt-0.5">
+          <span>Path: <strong className="text-slate-800">{formatShort(path)}</strong> ({pathPercent}%)</span>
+          <span>Pool: <strong className="text-slate-800">{formatShort(teamPool)}</strong></span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -51,7 +204,6 @@ export default function App() {
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
 
-  // Robust CSV line parser handling quotes and commas
   const parseCSVRow = (text) => {
     let p = '', row = [''], r = 0, q = false;
     for (let i = 0; i < text.length; i++) {
@@ -97,7 +249,7 @@ export default function App() {
         }));
       }
 
-      // 2. Locate Opportunity Header Row (usually Row 32 / index 31)
+      // 2. Locate Opportunity Header Row
       let headerIdx = -1;
       for (let i = 0; i < Math.min(rawLines.length, 50); i++) {
         const lineLower = rawLines[i].toLowerCase();
@@ -142,7 +294,6 @@ export default function App() {
 
           if (!oppName || oppName.toLowerCase().includes('total')) continue;
 
-          // Strip formula wrapper if exported as =HYPERLINK("url", "name")
           if (oppName.includes('HYPERLINK(')) {
             const match = oppName.match(/,"([^"]+)"\)/);
             if (match) oppName = match[1];
@@ -183,7 +334,6 @@ export default function App() {
     }
   };
 
-  // Automatically fetch fresh data from Google Sheet on initial mount
   useEffect(() => {
     fetchLiveData();
   }, []);
@@ -219,6 +369,7 @@ export default function App() {
     if (motionFilter === 'Inbound') activeTarget = targets.inbound;
     if (motionFilter === 'Outbound') activeTarget = targets.outbound;
 
+    const attainedPercent = activeTarget > 0 ? ((attainedPipe / activeTarget) * 100).toFixed(1) : '0.0';
     const gap = Math.max(0, activeTarget - attainedPipe);
     const remainingGap = Math.max(0, gap - pathPipe);
 
@@ -229,6 +380,7 @@ export default function App() {
     return {
       activeTarget,
       attainedPipe,
+      attainedPercent,
       qualifyingPipe,
       prospectingPipe,
       totalWorkingPool,
@@ -396,85 +548,107 @@ export default function App() {
               </div>
             </div>
 
+            {/* TOP 4 SPECIFIED WIDGETS */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
-                  <span>Q4 TARGET</span>
-                  <Target className="w-4 h-4 text-indigo-600" />
+              {/* 1. Q4 Target */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
+                    <span>Q4 TARGET</span>
+                    <Target className="w-4 h-4 text-indigo-600" />
+                  </div>
+                  <div className="text-2xl font-bold text-slate-900">${(metrics.activeTarget / 1000000).toFixed(2)}M</div>
                 </div>
-                <div className="text-2xl font-bold text-slate-900">${(metrics.activeTarget / 1000000).toFixed(2)}M</div>
-                <div className="text-xs text-slate-500 mt-2 flex items-center justify-between">
+                <div className="text-xs text-slate-500 mt-2 flex items-center justify-between pt-2 border-t border-slate-100">
                   <span>Inbound: ${(targets.inbound / 1000000).toFixed(2)}M</span>
                   <span>Outbound: ${(targets.outbound / 1000000).toFixed(2)}M</span>
                 </div>
               </div>
 
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
-                  <span>PIPELINE GENERATED (ATTAINED)</span>
-                  <Award className="w-4 h-4 text-emerald-600" />
-                </div>
-                <div className="text-2xl font-bold text-slate-900">${(metrics.attainedPipe / 1000000).toFixed(2)}M</div>
-                <div className="text-xs font-medium text-emerald-700 mt-2 flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                  0% Attainment (Awaiting S2+ Progression)
-                </div>
-              </div>
-
-              <div className="bg-white p-5 rounded-2xl border-2 border-indigo-200 shadow-sm">
-                <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
-                  <span>TOTAL WORKING POOL</span>
-                  <Layers className="w-4 h-4 text-[#FF595A]" />
-                </div>
-                <div className="text-2xl font-bold text-[#1B0B3B]">${(metrics.totalWorkingPool / 1000000).toFixed(2)}M</div>
-                <div className="text-xs text-slate-500 mt-2 flex items-center justify-between">
-                  <span>Qualifying: ${(metrics.qualifyingPipe / 1000000).toFixed(2)}M</span>
-                  <span>Prospecting: ${(metrics.prospectingPipe / 1000000).toFixed(2)}M</span>
-                </div>
-              </div>
-
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
-                  <span>REMAINING GAP</span>
-                  <AlertCircle className="w-4 h-4 text-rose-500" />
-                </div>
-                <div className="text-2xl font-bold text-rose-600">${(metrics.remainingGap / 1000000).toFixed(2)}M</div>
-                <div className="text-xs text-slate-500 mt-2">
-                  Commit/Likely Path: ${(metrics.pathPipe / 1000000).toFixed(2)}M
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              {Object.entries(targets.teams).map(([team, targetVal]) => {
-                const teamDeals = deals.filter(d => d.team === team);
-                const teamPool = teamDeals.reduce((sum, d) => sum + d.acv, 0);
-                const percentOfTarget = ((teamPool / targetVal) * 100).toFixed(1);
-                const isBehind = teamPool < targetVal * 0.5;
-
-                return (
-                  <div key={team} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-bold text-sm text-slate-800">{team}</span>
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                        isBehind ? 'bg-rose-50 text-rose-600 border border-rose-200' : 'bg-emerald-50 text-emerald-600 border border-emerald-200'
-                      }`}>
-                        {isBehind ? 'Behind' : 'Pacing'}
-                      </span>
-                    </div>
-                    <div className="text-lg font-bold text-slate-900">${(teamPool / 1000000).toFixed(2)}M <span className="text-xs font-normal text-slate-500">/ ${(targetVal / 1000000).toFixed(2)}M</span></div>
-                    <div className="w-full bg-slate-100 h-2 rounded-full mt-3 overflow-hidden">
-                      <div className="bg-[#635BFF] h-full rounded-full" style={{ width: `${Math.min(100, percentOfTarget)}%` }}></div>
-                    </div>
-                    <div className="flex justify-between items-center text-[11px] text-slate-500 mt-2">
-                      <span>{percentOfTarget}% coverage</span>
-                      <span>Gap: ${((targetVal - teamPool) / 1000000).toFixed(2)}M</span>
-                    </div>
+              {/* 2. Pipeline Generated in $ and % of Target in Subtext */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
+                    <span>PIPELINE GENERATED (ATTAINED)</span>
+                    <Award className="w-4 h-4 text-emerald-600" />
                   </div>
-                );
-              })}
+                  <div className="text-2xl font-bold text-slate-900">${(metrics.attainedPipe / 1000000).toFixed(2)}M</div>
+                </div>
+                <div className="text-xs font-semibold text-emerald-700 mt-2 flex items-center justify-between pt-2 border-t border-slate-100">
+                  <span>{metrics.attainedPercent}% of Q4 Target</span>
+                  <span className="text-[11px] font-normal text-slate-400">Stage 2+ Progress</span>
+                </div>
+              </div>
+
+              {/* 3. Commit / Likely Path with Working Pool, Qualifying & Prospecting in Subtext */}
+              <div className="bg-white p-5 rounded-2xl border-2 border-indigo-200 shadow-sm flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
+                    <span>COMMIT / LIKELY PATH</span>
+                    <Layers className="w-4 h-4 text-[#FF595A]" />
+                  </div>
+                  <div className="text-2xl font-bold text-[#1B0B3B]">${(metrics.pathPipe / 1000000).toFixed(2)}M</div>
+                </div>
+                <div className="text-[11.5px] text-slate-500 mt-2 pt-2 border-t border-slate-100 space-y-0.5">
+                  <div className="flex justify-between font-medium text-slate-700">
+                    <span>Working Pool:</span>
+                    <span>${(metrics.totalWorkingPool / 1000000).toFixed(2)}M</span>
+                  </div>
+                  <div className="flex justify-between text-[10.5px] text-slate-400">
+                    <span>Qual: ${(metrics.qualifyingPipe / 1000000).toFixed(2)}M</span>
+                    <span>Prosp: ${(metrics.prospectingPipe / 1000000).toFixed(2)}M</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Remaining Gap */}
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
+                    <span>REMAINING GAP</span>
+                    <AlertCircle className="w-4 h-4 text-rose-500" />
+                  </div>
+                  <div className="text-2xl font-bold text-rose-600">${(metrics.remainingGap / 1000000).toFixed(2)}M</div>
+                </div>
+                <div className="text-xs text-slate-500 mt-2 flex items-center justify-between pt-2 border-t border-slate-100">
+                  <span>Gross Gap: ${(metrics.gap / 1000000).toFixed(2)}M</span>
+                  <span className="text-rose-500 font-semibold">{((metrics.remainingGap / metrics.activeTarget) * 100).toFixed(0)}% Open</span>
+                </div>
+              </div>
             </div>
 
+            {/* 4 SPEEDOMETER DIALS WITH FULL TARGET, PACING NEEDLE & COVERAGE BAR */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+              {/* ANZ ENT */}
+              <TeamSpeedometer
+                title="ANZ ENT NB Pipe Pacing"
+                target={targets.teams['ANZ ENT']}
+                deals={deals.filter(d => d.team && d.team.includes('ENT'))}
+              />
+
+              {/* ANZ Scale */}
+              <TeamSpeedometer
+                title="ANZ Scale NB Pipe Pacing"
+                target={targets.teams['ANZ Scale']}
+                deals={deals.filter(d => d.team && d.team.includes('Scale'))}
+              />
+
+              {/* ANZ SMB */}
+              <TeamSpeedometer
+                title="ANZ SMB NB Pipe Pacing"
+                target={targets.teams['ANZ SMB']}
+                deals={deals.filter(d => d.team && d.team.includes('SMB'))}
+              />
+
+              {/* ANZ AM */}
+              <TeamSpeedometer
+                title="ANZ AM NB Pipe Pacing"
+                target={targets.teams['ANZ AM']}
+                deals={deals.filter(d => d.team && (d.team.includes('AM') || d.team.includes('Strategic')))}
+              />
+            </div>
+
+            {/* Opportunities Table */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
