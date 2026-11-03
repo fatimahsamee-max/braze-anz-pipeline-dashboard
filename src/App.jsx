@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   TrendingUp, TrendingDown, Target, ExternalLink, BarChart3, Filter, Award, Search, 
-  RefreshCw, CheckCircle2, AlertCircle, Layers, X, Sparkles, Compass, Share2, Users
+  RefreshCw, CheckCircle2, AlertCircle, Layers, X, Sparkles, Compass, Share2, Users, ChevronRight
 } from 'lucide-react';
 
 const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSChLkaPJrSjfFtM1vTWbkl2uffjadl-oV5qCdkTIIqsE7kVU_3eh3Vp4suNJfjUltlcT1t00Pi9KIP/pub?gid=2048510077&single=true&output=csv";
@@ -346,8 +346,11 @@ export default function App() {
   const [teamFilter, setTeamFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Rep Leaderboard interactive filter
+  // Interactive Rep Filter for Leaderboard
   const [selectedRep, setSelectedRep] = useState('ALL');
+
+  // Interactive Partner Filter for Partner Ecosystem Tab
+  const [selectedEcosystemPartner, setSelectedEcosystemPartner] = useState('ALL');
 
   // Crossbeam Overlaps Tab filters
   const [crossbeamPartnerFilter, setCrossbeamPartnerFilter] = useState('ALL');
@@ -359,7 +362,7 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(true);
   const [lastUpdated, setLastUpdated] = useState('Loading...');
 
-  // Bulletproof Date Parser supporting Australian DD/MM/YYYY, MM/DD/YYYY & ISO
+  // Australian Date Parser (DD/MM/YYYY)
   const getDaysUntilClose = (dateStr) => {
     if (!dateStr || typeof dateStr !== 'string') return 999;
     const clean = dateStr.trim();
@@ -374,13 +377,10 @@ export default function App() {
       if (year < 100) year += 2000;
 
       if (p1 > 12 && p2 <= 12) {
-        // Definite DD/MM/YYYY
         targetDate = new Date(year, p2 - 1, p1);
       } else if (p2 > 12 && p1 <= 12) {
-        // Definite MM/DD/YYYY
         targetDate = new Date(year, p1 - 1, p2);
       } else {
-        // Default to DD/MM/YYYY for Australia/Sydney
         targetDate = new Date(year, p2 - 1, p1);
       }
     } else {
@@ -458,16 +458,17 @@ export default function App() {
         const aeCol = getIdx(['ae', 'owner']);
         const bdrCol = getIdx(['bdr']);
         
-        // Column H: Partner (s) -> Secondary Agency Report
+        // Column H: Partner (s)
         const partnersCol = headers.findIndex(h => h.includes('partner (s)') || (h.includes('partner') && !h.includes('attached') && !h.includes('sourced') && !h.includes('crossbeam')));
         
         const attachedCol = getIdx(['partner attached', 'attached']);
+        const sourcedCol = getIdx(['partner sourced', 'sourced']);
         const commitCol = getIdx(['liklihood', 'likelihood', 'stage 1 commit', 'commit']);
         const dateCol = getIdx(['close date']);
         const motionCol = getIdx(['inbound/outbound', 'motion']);
         const typeCol = headers.findIndex(h => h === 'type');
         
-        // Column Y: Crossbeam Partners -> Primary Report
+        // Column Y: Crossbeam Partners
         const crossbeamCol = headers.findIndex(h => h.includes('crossbeam'));
 
         const parsedDeals = [];
@@ -486,8 +487,14 @@ export default function App() {
 
           const rawAcv = cols[acvCol !== -1 ? acvCol : 4] || '0';
           const cleanAcv = parseFloat(rawAcv.replace(/[^0-9.-]/g, '')) || 0;
+          
           const attachedVal = (cols[attachedCol !== -1 ? attachedCol : 8] || '').toLowerCase();
           const isAttached = attachedVal === 'yes' || attachedVal === '1' || attachedVal === 'true';
+
+          const sourcedVal = String(cols[sourcedCol !== -1 ? sourcedCol : 9] || '').trim();
+          const isSourced = sourcedVal.toLowerCase() === 'yes' || 
+                            sourcedVal.toLowerCase().includes('sourced') || 
+                            sourcedVal.toLowerCase() === '1';
 
           let rawCommit = cols[commitCol !== -1 ? commitCol : 18] || 'Non Commit';
           if (!rawCommit || rawCommit.trim() === '') rawCommit = 'Non Commit';
@@ -500,11 +507,13 @@ export default function App() {
             acv: cleanAcv,
             ae: cols[aeCol !== -1 ? aeCol : 5] || 'Unassigned',
             bdr: cols[bdrCol !== -1 ? bdrCol : 6] || '',
-            // Column H: Partner (s) only
+            // Column H: Partner (s)
             partners: cols[partnersCol !== -1 ? partnersCol : 7] || '',
-            // Column Y: Crossbeam Partners only
+            // Column Y: Crossbeam Partners
             crossbeamPartners: cols[crossbeamCol !== -1 ? crossbeamCol : 24] || '',
             partnerAttached: isAttached,
+            partnerSourcedDetail: sourcedVal,
+            isPartnerSourced: isSourced,
             commitStatus: rawCommit,
             closeDate: cols[dateCol !== -1 ? dateCol : 20] || '',
             motion: cols[motionCol !== -1 ? motionCol : 22] || 'Outbound',
@@ -595,13 +604,15 @@ export default function App() {
 
     const attainedPercent = activeTarget > 0 ? ((attainedPipe / activeTarget) * 100).toFixed(1) : '0.0';
     const remainingAttainedGap = Math.max(0, activeTarget - attainedPipe);
-    
-    // Gap to Path: Target minus Path
     const gapToPath = Math.max(0, activeTarget - pathPipe);
 
     const partnerAttachedDeals = relevantDeals.filter(d => d.partnerAttached);
     const partnerAttachedAcv = partnerAttachedDeals.reduce((sum, d) => sum + d.acv, 0);
     const attachRate = relevantDeals.length > 0 ? ((partnerAttachedDeals.length / relevantDeals.length) * 100).toFixed(1) : '0.0';
+
+    const partnerSourcedDeals = relevantDeals.filter(d => d.isPartnerSourced);
+    const partnerSourcedAcv = partnerSourcedDeals.reduce((sum, d) => sum + d.acv, 0);
+    const sourcedRate = relevantDeals.length > 0 ? ((partnerSourcedDeals.length / relevantDeals.length) * 100).toFixed(1) : '0.0';
 
     return {
       activeTarget,
@@ -618,11 +629,14 @@ export default function App() {
       partnerAttachedCount: partnerAttachedDeals.length,
       partnerAttachedAcv,
       attachRate,
+      partnerSourcedCount: partnerSourcedDeals.length,
+      partnerSourcedAcv,
+      sourcedRate,
       dealCount: relevantDeals.length
     };
   }, [deals, targets, motionFilter, teamFilter]);
 
-  // Partner Ecosystem Leaderboard: STRICTLY PULLS FROM COLUMN H (Partner (s)), NOT CROSSBEAM!
+  // Partner Ecosystem Data: STRICTLY PULLS FROM COLUMN H (Partner (s))
   const partnerData = useMemo(() => {
     let relevantDeals = deals;
     if (teamFilter !== 'ALL') {
@@ -638,14 +652,33 @@ export default function App() {
 
     const counts = {};
     relevantDeals.forEach(d => {
-      // Strictly Column H (Partner (s))
       if (d.partners) {
         const parts = d.partners.split(';').map(p => p.trim()).filter(Boolean);
         parts.forEach(p => {
-          if (!counts[p]) counts[p] = { name: p, count: 0, acv: 0, attachedCount: 0 };
+          if (!counts[p]) {
+            counts[p] = { 
+              name: p, 
+              count: 0, 
+              acv: 0, 
+              attachedCount: 0, 
+              attachedAcv: 0,
+              sourcedCount: 0, 
+              sourcedAcv: 0,
+              deals: [] 
+            };
+          }
           counts[p].count += 1;
           counts[p].acv += d.acv;
-          if (d.partnerAttached) counts[p].attachedCount += 1;
+          counts[p].deals.push(d);
+
+          if (d.partnerAttached) {
+            counts[p].attachedCount += 1;
+            counts[p].attachedAcv += d.acv;
+          }
+          if (d.isPartnerSourced) {
+            counts[p].sourcedCount += 1;
+            counts[p].sourcedAcv += d.acv;
+          }
         });
       }
     });
@@ -671,7 +704,7 @@ export default function App() {
     });
   }, [deals, searchQuery, teamFilter, motionFilter]);
 
-  // Crossbeam Overlaps Tab Data & Filters (Strictly Column Y)
+  // Crossbeam Overlaps Tab Data (Strictly Column Y)
   const crossbeamData = useMemo(() => {
     const list = [];
     deals.forEach(d => {
@@ -688,6 +721,7 @@ export default function App() {
             stage: d.stage,
             commitStatus: d.commitStatus,
             attached: d.partnerAttached,
+            sourced: d.partnerSourcedDetail,
             motion: d.motion,
             closeDate: d.closeDate
           });
@@ -834,7 +868,6 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-6 py-6 w-full flex-1">
         {activeTab === 'overview' && (
           <div className="space-y-6">
-            {/* Executive Movement Summary */}
             <ExecutiveMovementSummary 
               historyData={historyData} 
               deals={deals} 
@@ -881,9 +914,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* TOP 4 SUMMARY WIDGETS */}
+            {/* Top 4 Summary Widgets */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* 1. Target */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
@@ -898,7 +930,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 2. Pipeline Generated (Attained) */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
@@ -913,7 +944,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 3. Commit / Likely Path WITH GAP TO PATH FIRST, THEN TOTAL WORKING POOL */}
+              {/* Commit / Likely Path WITH Gap to Path First, then Total Working Pool */}
               <div className="bg-white p-5 rounded-2xl border-2 border-indigo-200 shadow-sm flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
@@ -923,10 +954,9 @@ export default function App() {
                   <div className="text-2xl font-bold text-[#1B0B3B]">${(metrics.pathPipe / 1000000).toFixed(2)}M</div>
                 </div>
                 
-                {/* SUBTEXT: Gap to Path First, Working Pool Below */}
                 <div className="text-[11.5px] text-slate-600 mt-2 pt-2 border-t border-slate-100 space-y-1">
                   <div className="flex justify-between text-amber-700 font-semibold">
-                    <span>Gap to Path:</span>
+                    <span>Gap to path:</span>
                     <span>${(metrics.gapToPath / 1000000).toFixed(2)}M</span>
                   </div>
                   <div className="flex justify-between font-medium text-slate-700">
@@ -940,7 +970,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 4. Remaining Gap */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
@@ -958,7 +987,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* TEAM SPEEDOMETERS */}
+            {/* Speedometers */}
             {teamFilter === 'ALL' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                 <TeamSpeedometer
@@ -1091,7 +1120,6 @@ export default function App() {
                   </p>
                 </div>
                 
-                {/* Active Filter Indicators & Reset Buttons */}
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs bg-slate-100 text-slate-700 px-3 py-1.5 rounded-lg font-semibold border border-slate-200">
                     Team: {teamFilter}
@@ -1160,13 +1188,10 @@ export default function App() {
                 });
 
                 const topReps = sortedReps.slice(0, 3);
-                
-                // Rep filtered deals below table
                 const dealsForSelectedRep = filteredDeals.filter(d => selectedRep === 'ALL' || d.ae === selectedRep);
 
                 return (
                   <>
-                    {/* Top 3 Podium Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                       {topReps.map((r, idx) => {
                         const isGold = idx === 0;
@@ -1230,7 +1255,6 @@ export default function App() {
                       })}
                     </div>
 
-                    {/* Standings Table */}
                     <div className="border border-slate-200 rounded-2xl overflow-hidden mb-6">
                       <div className="bg-slate-50/80 px-4 py-3 border-b border-slate-200 flex justify-between items-center">
                         <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Rep Standings & Conversion Ratios</span>
@@ -1298,7 +1322,6 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Opportunities Below Leaderboard */}
                     <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
                       <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-3">
                         <div>
@@ -1397,7 +1420,7 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB: CROSSBEAM OVERLAPS (PULLS STRICTLY FROM COLUMN Y) */}
+        {/* TAB: CROSSBEAM OVERLAPS (STRICTLY COLUMN Y) */}
         {activeTab === 'crossbeam' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
@@ -1547,65 +1570,97 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB: PARTNER ECOSYSTEM (STRICTLY COLUMN H: PARTNER (S)) */}
+        {/* TAB: PARTNER ECOSYSTEM (STRICTLY COLUMN H: PARTNER (S)) WITH ATTACHED + SOURCED DETAILS & DRILLDOWN */}
         {activeTab === 'partners' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
                 <div>
                   <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                     <Users className="w-5 h-5 text-indigo-600" /> Partner Ecosystem Leaderboard {teamFilter !== 'ALL' ? `(${teamFilter})` : ''}
                   </h2>
                   <p className="text-xs text-slate-500">
-                    Aggregated strictly from the <strong>Partner (s)</strong> column (Agency & Tech Partners).
+                    Aggregated strictly from the <strong>Partner (s)</strong> column (Agency & Tech Partners). Click any partner to drill into their deals.
                   </p>
                 </div>
-                <div className="flex gap-4 text-xs font-semibold">
+                
+                {/* ATTACHED & SOURCED METRICS BANNER */}
+                <div className="flex flex-wrap gap-2 text-xs font-semibold">
                   <div className="bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-lg text-indigo-900">
-                    Attach Rate: <span className="font-bold text-[#FF595A]">{metrics.attachRate}%</span>
+                    Attached Rate: <span className="font-bold text-[#FF595A]">{metrics.attachRate}%</span> ({metrics.partnerAttachedCount} deals · ${(metrics.partnerAttachedAcv / 1000).toFixed(0)}k)
                   </div>
                   <div className="bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg text-emerald-900">
-                    Attached Pipeline: <span className="font-bold">${metrics.partnerAttachedAcv.toLocaleString()}</span>
+                    Sourced Rate: <span className="font-bold text-emerald-700">{metrics.sourcedRate}%</span> ({metrics.partnerSourcedCount} deals · ${(metrics.partnerSourcedAcv / 1000).toFixed(0)}k)
                   </div>
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
+              {/* ACTIVE PARTNER FILTER BADGE */}
+              {selectedEcosystemPartner !== 'ALL' && (
+                <div className="flex items-center gap-2 bg-indigo-50/70 p-2.5 rounded-xl border border-indigo-200 mb-4">
+                  <span className="text-xs font-bold text-indigo-950">
+                    Filtering to Partner: <strong className="text-indigo-600">{selectedEcosystemPartner}</strong>
+                  </span>
+                  <button
+                    onClick={() => setSelectedEcosystemPartner('ALL')}
+                    className="ml-auto text-xs text-indigo-700 hover:text-indigo-900 font-bold flex items-center gap-1 bg-white px-2.5 py-1 rounded-lg border border-indigo-200 transition"
+                  >
+                    <X className="w-3.5 h-3.5 text-indigo-600" /> Show All Partners
+                  </button>
+                </div>
+              )}
+
+              {/* PARTNER LEADERBOARD TABLE */}
+              <div className="overflow-x-auto border border-slate-200 rounded-2xl mb-6">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold">
                       <th className="py-3 px-4">Partner Technology / Agency</th>
-                      <th className="py-3 px-4 text-center">Opportunities Tagged</th>
+                      <th className="py-3 px-4 text-center">Tagged Deals</th>
                       <th className="py-3 px-4 text-center">Attached Deals</th>
-                      <th className="py-3 px-4 text-right">Influenced ACV</th>
-                      <th className="py-3 px-4 text-center">Status</th>
+                      <th className="py-3 px-4 text-center">Sourced Deals</th>
+                      <th className="py-3 px-4 text-right">Total Pipeline ACV</th>
+                      <th className="py-3 px-4 text-center">Drilldown</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {partnerData.length === 0 ? (
                       <tr>
-                        <td colSpan="5" className="text-center py-8 text-slate-400 text-xs">
-                          No partners tagged in Column H for the current team filter.
+                        <td colSpan="6" className="text-center py-8 text-slate-400 text-xs">
+                          No partners found in Column H for the active team selection.
                         </td>
                       </tr>
                     ) : (
-                      partnerData.slice(0, 15).map((p, idx) => (
-                        <tr key={p.name} className="hover:bg-slate-50/80 transition">
+                      partnerData.slice(0, 20).map((p, idx) => (
+                        <tr 
+                          key={p.name} 
+                          className={`hover:bg-slate-50/80 transition ${selectedEcosystemPartner === p.name ? 'bg-indigo-50/50' : ''}`}
+                        >
                           <td className="py-3 px-4 font-bold text-slate-900 flex items-center gap-2">
                             <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-[10px]">
                               {idx + 1}
                             </span>
                             {p.name}
                           </td>
-                          <td className="py-3 px-4 text-center font-medium text-slate-700">{p.count} deals</td>
-                          <td className="py-3 px-4 text-center font-bold text-emerald-600">{p.attachedCount} attached</td>
+                          <td className="py-3 px-4 text-center font-medium text-slate-700">{p.count}</td>
+                          <td className="py-3 px-4 text-center font-bold text-indigo-700">
+                            {p.attachedCount} <span className="text-[10px] font-normal text-slate-400">(${(p.attachedAcv / 1000).toFixed(0)}k)</span>
+                          </td>
+                          <td className="py-3 px-4 text-center font-bold text-emerald-700">
+                            {p.sourcedCount} <span className="text-[10px] font-normal text-slate-400">(${(p.sourcedAcv / 1000).toFixed(0)}k)</span>
+                          </td>
                           <td className="py-3 px-4 text-right font-extrabold text-slate-900">${p.acv.toLocaleString()}</td>
                           <td className="py-3 px-4 text-center">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                              p.attachedCount > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
-                            }`}>
-                              {p.attachedCount > 0 ? 'Active Attachment' : 'Ecosystem Tag'}
-                            </span>
+                            <button
+                              onClick={() => setSelectedEcosystemPartner(selectedEcosystemPartner === p.name ? 'ALL' : p.name)}
+                              className={`px-2.5 py-1 rounded transition text-[11px] font-semibold ${
+                                selectedEcosystemPartner === p.name
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                              }`}
+                            >
+                              {selectedEcosystemPartner === p.name ? 'Clear' : 'View Deals'}
+                            </button>
                           </td>
                         </tr>
                       ))
@@ -1613,6 +1668,105 @@ export default function App() {
                   </tbody>
                 </table>
               </div>
+
+              {/* DRILLDOWN TABLE: OPPORTUNITIES UNDER SELECTED PARTNER */}
+              {(() => {
+                const dealsToDisplay = selectedEcosystemPartner === 'ALL'
+                  ? []
+                  : (partnerData.find(p => p.name === selectedEcosystemPartner)?.deals || []);
+
+                if (selectedEcosystemPartner === 'ALL') {
+                  return (
+                    <div className="bg-slate-50/70 border border-slate-200 border-dashed rounded-xl p-6 text-center text-xs text-slate-500">
+                      💡 Click <strong>"View Deals"</strong> on any partner row above to inspect the specific opportunities, attached statuses, and sourced details tagged to that partner.
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+                    <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-3">
+                      <div>
+                        <h3 className="font-bold text-slate-900 text-sm">
+                          Opportunities Tagged with "{selectedEcosystemPartner}"
+                        </h3>
+                        <p className="text-[11px] text-slate-500">
+                          {dealsToDisplay.length} opportunities · Total Influenced: ${dealsToDisplay.reduce((s, d) => s + d.acv, 0).toLocaleString()}
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => setSelectedEcosystemPartner('ALL')}
+                        className="text-xs text-rose-600 hover:underline flex items-center gap-1 font-semibold"
+                      >
+                        <X className="w-3.5 h-3.5" /> Close Drilldown
+                      </button>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-slate-50/75 border-b border-slate-200 text-slate-500 font-semibold">
+                            <th className="py-3 px-4">Opportunity Name</th>
+                            <th className="py-3 px-3">AE</th>
+                            <th className="py-3 px-3">Team</th>
+                            <th className="py-3 px-3 text-right">ACV</th>
+                            <th className="py-3 px-3 text-center">Attached</th>
+                            <th className="py-3 px-3 text-center">Sourced Detail</th>
+                            <th className="py-3 px-3">Likelihood to Pipe</th>
+                            <th className="py-3 px-3">Close Date</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {dealsToDisplay.map((d) => (
+                            <tr key={d.id} className="hover:bg-slate-50/80 transition">
+                              <td className="py-3 px-4 font-medium text-slate-900">
+                                <a 
+                                  href={`https://braze.lightning.force.com/lightning/r/Opportunity/${d.id}/view`}
+                                  target="_blank" 
+                                  rel="noreferrer"
+                                  className="text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1"
+                                >
+                                  {d.name}
+                                  <ExternalLink className="w-3 h-3 text-slate-400" />
+                                </a>
+                              </td>
+                              <td className="py-3 px-3 font-semibold text-slate-800">{d.ae}</td>
+                              <td className="py-3 px-3 text-slate-600">{d.team}</td>
+                              <td className="py-3 px-3 text-right font-bold text-slate-900">${d.acv.toLocaleString()}</td>
+                              <td className="py-3 px-3 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  d.partnerAttached ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-100 text-slate-500'
+                                }`}>
+                                  {d.partnerAttached ? 'Yes' : 'No'}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  d.isPartnerSourced ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                                }`}>
+                                  {d.partnerSourcedDetail || 'None'}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3">
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium ${
+                                  d.commitStatus === 'Commit' ? 'bg-emerald-100 text-emerald-800' :
+                                  d.commitStatus === 'Likely' ? 'bg-indigo-100 text-indigo-800' :
+                                  d.commitStatus === 'Attained' ? 'bg-teal-100 text-teal-800 font-bold' :
+                                  'bg-slate-100 text-slate-600'
+                                }`}>
+                                  {d.commitStatus}
+                                </span>
+                              </td>
+                              <td className="py-3 px-3 text-slate-500">{d.closeDate}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
