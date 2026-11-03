@@ -1,15 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  TrendingUp, TrendingDown, Target, Zap, DollarSign, Calendar, 
-  ExternalLink, ArrowUpRight, BarChart3, Filter, Award, Search, 
-  RefreshCw, CheckCircle2, AlertCircle, Clock, Users, Briefcase, 
-  ShieldCheck, Share2, Eye, Building2, ChevronRight, Layers,
-  ChevronDown, X, Sparkles, Check, Edit3, Save, Compass
+  TrendingUp, TrendingDown, Target, ExternalLink, BarChart3, Filter, Award, Search, 
+  RefreshCw, CheckCircle2, AlertCircle, Layers, X, Sparkles, Compass, Share2, Users
 } from 'lucide-react';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
-  ResponsiveContainer, PieChart, Pie, Cell, Legend 
-} from 'recharts';
 
 const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSChLkaPJrSjfFtM1vTWbkl2uffjadl-oV5qCdkTIIqsE7kVU_3eh3Vp4suNJfjUltlcT1t00Pi9KIP/pub?gid=2048510077&single=true&output=csv";
 const HISTORY_CSV_URL = ""; // Optional: Published CSV URL of 'Pipeline_History' tab
@@ -351,25 +344,52 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [motionFilter, setMotionFilter] = useState('ALL');
   const [teamFilter, setTeamFilter] = useState('ALL');
-  const [commitFilter, setCommitFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   
+  // Rep Leaderboard interactive filter
+  const [selectedRep, setSelectedRep] = useState('ALL');
+
+  // Crossbeam Overlaps Tab filters
+  const [crossbeamPartnerFilter, setCrossbeamPartnerFilter] = useState('ALL');
+  const [crossbeamRepFilter, setCrossbeamRepFilter] = useState('ALL');
+
   const [deals, setDeals] = useState([]);
   const [historyData, setHistoryData] = useState([]);
   const [targets, setTargets] = useState(INITIAL_TARGETS);
   const [isRefreshing, setIsRefreshing] = useState(true);
   const [lastUpdated, setLastUpdated] = useState('Loading...');
-  const [writeBackStatus, setWriteBackStatus] = useState(null);
 
-  const [editingDeal, setEditingDeal] = useState(null);
-  const [editAcv, setEditAcv] = useState('');
-  const [editCommit, setEditCommit] = useState('');
-
+  // Bulletproof Date Parser supporting Australian DD/MM/YYYY, MM/DD/YYYY & ISO
   const getDaysUntilClose = (dateStr) => {
-    if (!dateStr) return 999;
-    const today = new Date('2026-11-02');
-    const targetDate = new Date(dateStr);
-    if (isNaN(targetDate.getTime())) return 999;
+    if (!dateStr || typeof dateStr !== 'string') return 999;
+    const clean = dateStr.trim();
+    if (!clean) return 999;
+
+    let targetDate = null;
+    const dmyMatch = clean.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+    if (dmyMatch) {
+      const p1 = parseInt(dmyMatch[1], 10);
+      const p2 = parseInt(dmyMatch[2], 10);
+      let year = parseInt(dmyMatch[3], 10);
+      if (year < 100) year += 2000;
+
+      if (p1 > 12 && p2 <= 12) {
+        // Definite DD/MM/YYYY
+        targetDate = new Date(year, p2 - 1, p1);
+      } else if (p2 > 12 && p1 <= 12) {
+        // Definite MM/DD/YYYY
+        targetDate = new Date(year, p1 - 1, p2);
+      } else {
+        // Default to DD/MM/YYYY for Australia/Sydney
+        targetDate = new Date(year, p2 - 1, p1);
+      }
+    } else {
+      targetDate = new Date(clean);
+    }
+
+    if (!targetDate || isNaN(targetDate.getTime())) return 999;
+
+    const today = new Date('2026-11-03');
     const diffTime = targetDate - today;
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
@@ -437,13 +457,18 @@ export default function App() {
         const acvCol = getIdx(['acv', 'amount']);
         const aeCol = getIdx(['ae', 'owner']);
         const bdrCol = getIdx(['bdr']);
-        const partnersCol = headers.findIndex(h => h.includes('partner (s)') || (h.includes('partner') && !h.includes('attached') && !h.includes('sourced') && !h.includes('agency')));
+        
+        // Column H: Partner (s) -> Secondary Agency Report
+        const partnersCol = headers.findIndex(h => h.includes('partner (s)') || (h.includes('partner') && !h.includes('attached') && !h.includes('sourced') && !h.includes('crossbeam')));
+        
         const attachedCol = getIdx(['partner attached', 'attached']);
         const commitCol = getIdx(['liklihood', 'likelihood', 'stage 1 commit', 'commit']);
         const dateCol = getIdx(['close date']);
         const motionCol = getIdx(['inbound/outbound', 'motion']);
         const typeCol = headers.findIndex(h => h === 'type');
-        const agencyCol = headers.findIndex(h => h.includes('agency') || h.includes('crossbeam'));
+        
+        // Column Y: Crossbeam Partners -> Primary Report
+        const crossbeamCol = headers.findIndex(h => h.includes('crossbeam'));
 
         const parsedDeals = [];
 
@@ -475,8 +500,10 @@ export default function App() {
             acv: cleanAcv,
             ae: cols[aeCol !== -1 ? aeCol : 5] || 'Unassigned',
             bdr: cols[bdrCol !== -1 ? bdrCol : 6] || '',
+            // Column H: Partner (s) only
             partners: cols[partnersCol !== -1 ? partnersCol : 7] || '',
-            agencyPartners: agencyCol !== -1 ? cols[agencyCol] : '',
+            // Column Y: Crossbeam Partners only
+            crossbeamPartners: cols[crossbeamCol !== -1 ? crossbeamCol : 24] || '',
             partnerAttached: isAttached,
             commitStatus: rawCommit,
             closeDate: cols[dateCol !== -1 ? dateCol : 20] || '',
@@ -531,22 +558,9 @@ export default function App() {
     fetchLiveData();
   }, []);
 
-  const handleSaveEdit = () => {
-    if (!editingDeal) return;
-    const numAcv = parseFloat(editAcv) || 0;
-    const newCommit = editCommit;
-
-    setDeals(prev => prev.map(d => d.id === editingDeal.id ? { ...d, acv: numAcv, commitStatus: newCommit } : d));
-    setWriteBackStatus({ type: 'success', msg: `Updated ${editingDeal.name} locally in dashboard!` });
-    setTimeout(() => setWriteBackStatus(null), 3000);
-    setEditingDeal(null);
-  };
-
-  // Metrics dynamically respond to BOTH Team Filter and Motion Filter
   const metrics = useMemo(() => {
     let relevantDeals = deals;
     
-    // 1. Team Filter
     if (teamFilter !== 'ALL') {
       relevantDeals = relevantDeals.filter(d => {
         const t = (d.team || '').toUpperCase();
@@ -558,7 +572,6 @@ export default function App() {
       });
     }
 
-    // 2. Motion Filter
     if (motionFilter !== 'ALL') {
       relevantDeals = relevantDeals.filter(d => d.motion === motionFilter);
     }
@@ -572,7 +585,6 @@ export default function App() {
     const likelyPipe = relevantDeals.filter(d => d.commitStatus === 'Likely').reduce((sum, d) => sum + d.acv, 0);
     const pathPipe = commitPipe + (likelyPipe * 0.5);
 
-    // Dynamic Target Calculation
     let activeTarget = targets.total;
     if (teamFilter !== 'ALL') {
       activeTarget = targets.teams[teamFilter] || targets.total;
@@ -582,13 +594,10 @@ export default function App() {
     }
 
     const attainedPercent = activeTarget > 0 ? ((attainedPipe / activeTarget) * 100).toFixed(1) : '0.0';
-    
-    // Remaining Gap strictly calculated from ATTAINED to TARGET
     const remainingAttainedGap = Math.max(0, activeTarget - attainedPipe);
     
-    // Gap to Working Pool: Target minus Total Working Pool
-    const workingPoolGap = Math.max(0, activeTarget - totalWorkingPool);
-    const workingPoolCoverage = activeTarget > 0 ? ((totalWorkingPool / activeTarget) * 100).toFixed(1) : '0.0';
+    // Gap to Path: Target minus Path
+    const gapToPath = Math.max(0, activeTarget - pathPipe);
 
     const partnerAttachedDeals = relevantDeals.filter(d => d.partnerAttached);
     const partnerAttachedAcv = partnerAttachedDeals.reduce((sum, d) => sum + d.acv, 0);
@@ -605,8 +614,7 @@ export default function App() {
       likelyPipe,
       pathPipe,
       remainingAttainedGap,
-      workingPoolGap,
-      workingPoolCoverage,
+      gapToPath,
       partnerAttachedCount: partnerAttachedDeals.length,
       partnerAttachedAcv,
       attachRate,
@@ -614,6 +622,7 @@ export default function App() {
     };
   }, [deals, targets, motionFilter, teamFilter]);
 
+  // Partner Ecosystem Leaderboard: STRICTLY PULLS FROM COLUMN H (Partner (s)), NOT CROSSBEAM!
   const partnerData = useMemo(() => {
     let relevantDeals = deals;
     if (teamFilter !== 'ALL') {
@@ -629,9 +638,9 @@ export default function App() {
 
     const counts = {};
     relevantDeals.forEach(d => {
-      const allPartners = [d.partners, d.agencyPartners].filter(Boolean).join(';');
-      if (allPartners) {
-        const parts = allPartners.split(';').map(p => p.trim()).filter(Boolean);
+      // Strictly Column H (Partner (s))
+      if (d.partners) {
+        const parts = d.partners.split(';').map(p => p.trim()).filter(Boolean);
         parts.forEach(p => {
           if (!counts[p]) counts[p] = { name: p, count: 0, acv: 0, attachedCount: 0 };
           counts[p].count += 1;
@@ -648,7 +657,7 @@ export default function App() {
       const matchesSearch = d.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                             d.ae.toLowerCase().includes(searchQuery.toLowerCase()) || 
                             d.partners.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            (d.agencyPartners && d.agencyPartners.toLowerCase().includes(searchQuery.toLowerCase()));
+                            d.crossbeamPartners.toLowerCase().includes(searchQuery.toLowerCase());
       
       const t = (d.team || '').toUpperCase();
       let matchesTeam = true;
@@ -657,14 +666,73 @@ export default function App() {
       else if (teamFilter === 'ANZ SMB') matchesTeam = t.includes('SMB');
       else if (teamFilter === 'ANZ AM') matchesTeam = t.includes('AM') || t.includes('STRATEGIC');
 
-      const matchesCommit = commitFilter === 'ALL' || d.commitStatus === commitFilter;
       const matchesMotion = motionFilter === 'ALL' || d.motion === motionFilter;
-      return matchesSearch && matchesTeam && matchesCommit && matchesMotion;
+      return matchesSearch && matchesTeam && matchesMotion;
     });
-  }, [deals, searchQuery, teamFilter, commitFilter, motionFilter]);
+  }, [deals, searchQuery, teamFilter, motionFilter]);
 
+  // Crossbeam Overlaps Tab Data & Filters (Strictly Column Y)
+  const crossbeamData = useMemo(() => {
+    const list = [];
+    deals.forEach(d => {
+      if (d.crossbeamPartners) {
+        const parts = d.crossbeamPartners.split(';').map(p => p.trim()).filter(Boolean);
+        parts.forEach(p => {
+          list.push({
+            partner: p,
+            dealName: d.name,
+            dealId: d.id,
+            ae: d.ae,
+            team: d.team,
+            acv: d.acv,
+            stage: d.stage,
+            commitStatus: d.commitStatus,
+            attached: d.partnerAttached,
+            motion: d.motion,
+            closeDate: d.closeDate
+          });
+        });
+      }
+    });
+    return list;
+  }, [deals]);
+
+  const crossbeamPartnersList = useMemo(() => {
+    const pSet = new Set(crossbeamData.map(item => item.partner));
+    return Array.from(pSet).sort();
+  }, [crossbeamData]);
+
+  const crossbeamRepsList = useMemo(() => {
+    const rSet = new Set(crossbeamData.map(item => item.ae));
+    return Array.from(rSet).sort();
+  }, [crossbeamData]);
+
+  const filteredCrossbeamData = useMemo(() => {
+    return crossbeamData.filter(item => {
+      const matchesPartner = crossbeamPartnerFilter === 'ALL' || item.partner === crossbeamPartnerFilter;
+      const matchesRep = crossbeamRepFilter === 'ALL' || item.ae === crossbeamRepFilter;
+      const matchesSearch = item.dealName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            item.partner.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            item.ae.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesPartner && matchesRep && matchesSearch;
+    });
+  }, [crossbeamData, crossbeamPartnerFilter, crossbeamRepFilter, searchQuery]);
+
+  // Focus Opportunities (0-90 & 91-180 Days)
   const priorityDeals = useMemo(() => {
-    return filteredDeals.map(d => {
+    let baseDeals = deals;
+    if (teamFilter !== 'ALL') {
+      baseDeals = baseDeals.filter(d => {
+        const t = (d.team || '').toUpperCase();
+        if (teamFilter === 'ANZ ENT') return t.includes('ENT');
+        if (teamFilter === 'ANZ Scale') return t.includes('SCALE');
+        if (teamFilter === 'ANZ SMB') return t.includes('SMB');
+        if (teamFilter === 'ANZ AM') return t.includes('AM') || t.includes('STRATEGIC');
+        return false;
+      });
+    }
+
+    return baseDeals.map(d => {
       const days = getDaysUntilClose(d.closeDate);
       let tier = null;
       let badgeColor = '';
@@ -682,7 +750,7 @@ export default function App() {
       return { ...d, days, tier, badgeColor };
     }).filter(d => d.tier !== null)
       .sort((a, b) => a.days - b.days);
-  }, [filteredDeals]);
+  }, [deals, teamFilter]);
 
   return (
     <div className="min-h-screen bg-[#F8F9FC] text-slate-900 flex flex-col font-sans">
@@ -734,7 +802,15 @@ export default function App() {
               activeTab === 'leaderboard' ? 'bg-[#FF595A] text-white shadow-sm' : 'text-indigo-200 hover:bg-white/10'
             }`}
           >
-            <Award className="w-3.5 h-3.5" /> Rep Leaderboard
+            <Award className="w-3.5 h-3.5" /> Rep Pipeline Leaderboard
+          </button>
+          <button 
+            onClick={() => setActiveTab('crossbeam')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
+              activeTab === 'crossbeam' ? 'bg-[#FF595A] text-white shadow-sm' : 'text-indigo-200 hover:bg-white/10'
+            }`}
+          >
+            <Share2 className="w-3.5 h-3.5" /> Crossbeam Overlaps
           </button>
           <button 
             onClick={() => setActiveTab('partners')}
@@ -742,7 +818,7 @@ export default function App() {
               activeTab === 'partners' ? 'bg-[#FF595A] text-white shadow-sm' : 'text-indigo-200 hover:bg-white/10'
             }`}
           >
-            <ShieldCheck className="w-3.5 h-3.5" /> Partner Leaderboard
+            <Users className="w-3.5 h-3.5" /> Partner Ecosystem
           </button>
           <button 
             onClick={() => setActiveTab('focus')}
@@ -755,19 +831,6 @@ export default function App() {
         </div>
       </header>
 
-      {writeBackStatus && (
-        <div className={`py-2.5 px-4 text-xs font-medium text-center flex items-center justify-center gap-2 transition ${
-          writeBackStatus.type === 'saving' ? 'bg-indigo-100 text-indigo-900' :
-          writeBackStatus.type === 'success' ? 'bg-emerald-100 text-emerald-900 border-b border-emerald-200' :
-          'bg-rose-100 text-rose-900 border-b border-rose-200'
-        }`}>
-          {writeBackStatus.type === 'saving' ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> :
-           writeBackStatus.type === 'success' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> :
-           <AlertCircle className="w-3.5 h-3.5 text-rose-600" />}
-          {writeBackStatus.msg}
-        </div>
-      )}
-
       <main className="max-w-7xl mx-auto px-6 py-6 w-full flex-1">
         {activeTab === 'overview' && (
           <div className="space-y-6">
@@ -779,9 +842,8 @@ export default function App() {
               activeTeamFilter={teamFilter}
             />
 
-            {/* DUAL GLOBAL FILTERS: TEAM SEGMENT & PIPELINE MOTION */}
+            {/* Global Filters */}
             <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
-              {/* Team Filter */}
               <div className="flex items-center gap-2 w-full md:w-auto">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
                   <Filter className="w-3.5 h-3.5 text-indigo-600" /> Team:
@@ -801,7 +863,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Motion Filter */}
               <div className="flex items-center gap-2 w-full md:w-auto justify-end">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Motion:</span>
                 <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs font-semibold">
@@ -820,7 +881,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* TOP 4 SUMMARY WIDGETS WITH UPDATED GAP LOGIC */}
+            {/* TOP 4 SUMMARY WIDGETS */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* 1. Target */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
@@ -852,7 +913,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 3. Commit / Likely Path WITH GAP TO WORKING POOL */}
+              {/* 3. Commit / Likely Path WITH GAP TO PATH FIRST, THEN TOTAL WORKING POOL */}
               <div className="bg-white p-5 rounded-2xl border-2 border-indigo-200 shadow-sm flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
@@ -862,15 +923,15 @@ export default function App() {
                   <div className="text-2xl font-bold text-[#1B0B3B]">${(metrics.pathPipe / 1000000).toFixed(2)}M</div>
                 </div>
                 
-                {/* Working Pool & Gap to Working Pool */}
+                {/* SUBTEXT: Gap to Path First, Working Pool Below */}
                 <div className="text-[11.5px] text-slate-600 mt-2 pt-2 border-t border-slate-100 space-y-1">
-                  <div className="flex justify-between font-semibold">
-                    <span>Total Working Pool:</span>
-                    <span className="text-indigo-900">${(metrics.totalWorkingPool / 1000000).toFixed(2)}M ({metrics.workingPoolCoverage}%)</span>
+                  <div className="flex justify-between text-amber-700 font-semibold">
+                    <span>Gap to Path:</span>
+                    <span>${(metrics.gapToPath / 1000000).toFixed(2)}M</span>
                   </div>
-                  <div className="flex justify-between text-amber-700 font-medium text-[11px]">
-                    <span>Gap to Working Pool:</span>
-                    <span>${(metrics.workingPoolGap / 1000000).toFixed(2)}M</span>
+                  <div className="flex justify-between font-medium text-slate-700">
+                    <span>Total Working Pool:</span>
+                    <span className="text-slate-900 font-bold">${(metrics.totalWorkingPool / 1000000).toFixed(2)}M</span>
                   </div>
                   <div className="flex justify-between text-[10px] text-slate-400 pt-0.5">
                     <span>Qual: ${(metrics.qualifyingPipe / 1000000).toFixed(2)}M</span>
@@ -879,7 +940,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 4. REMAINING GAP: STRICTLY CALCULATED FROM ATTAINED TO TARGET */}
+              {/* 4. Remaining Gap */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
@@ -897,7 +958,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* TEAM SPEEDOMETER DIALS */}
+            {/* TEAM SPEEDOMETERS */}
             {teamFilter === 'ALL' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                 <TeamSpeedometer
@@ -931,7 +992,7 @@ export default function App() {
               </div>
             )}
 
-            {/* Opportunities Table Filtered by Selected Team */}
+            {/* Opportunities Table */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
@@ -943,17 +1004,15 @@ export default function App() {
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2 w-full md:w-auto">
-                  <div className="relative flex-1 md:w-60">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input 
-                      type="text" 
-                      placeholder="Search account, AE, partner..." 
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full text-xs pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
+                <div className="relative flex-1 md:w-60">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input 
+                    type="text" 
+                    placeholder="Search account, AE, partner..." 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full text-xs pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500"
+                  />
                 </div>
               </div>
 
@@ -967,9 +1026,8 @@ export default function App() {
                       <th className="py-3 px-3 text-right">ACV</th>
                       <th className="py-3 px-3">AE / BDR</th>
                       <th className="py-3 px-3">Likelihood to Pipe</th>
-                      <th className="py-3 px-3">Agency Partners</th>
+                      <th className="py-3 px-3">Partner (s)</th>
                       <th className="py-3 px-3">Close Date</th>
-                      <th className="py-3 px-4 text-center">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1006,22 +1064,10 @@ export default function App() {
                             {d.commitStatus}
                           </span>
                         </td>
-                        <td className="py-3 px-3 text-slate-600 max-w-[200px] truncate" title={d.agencyPartners || d.partners}>
-                          {d.agencyPartners || d.partners || <span className="text-slate-300">—</span>}
+                        <td className="py-3 px-3 text-slate-600 max-w-[200px] truncate" title={d.partners}>
+                          {d.partners || <span className="text-slate-300">—</span>}
                         </td>
                         <td className="py-3 px-3 text-slate-500">{d.closeDate}</td>
-                        <td className="py-3 px-4 text-center">
-                          <button 
-                            onClick={() => {
-                              setEditingDeal(d);
-                              setEditAcv(d.acv.toString());
-                              setEditCommit(d.commitStatus);
-                            }}
-                            className="text-xs text-indigo-600 hover:text-indigo-900 font-semibold px-2 py-1 rounded bg-indigo-50 hover:bg-indigo-100 transition flex items-center gap-1 mx-auto"
-                          >
-                            <Edit3 className="w-3 h-3" /> Update
-                          </button>
-                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1031,27 +1077,49 @@ export default function App() {
           </div>
         )}
 
+        {/* REP PIPELINE LEADERBOARD TAB */}
         {activeTab === 'leaderboard' && (
           <div className="space-y-6">
-            {/* Header & Stats Banner */}
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                 <div>
                   <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                    <Award className="w-5 h-5 text-amber-500" /> Account Executive (AE) Pipeline Leaderboard {teamFilter !== 'ALL' ? `(${teamFilter})` : ''}
+                    <Award className="w-5 h-5 text-amber-500" /> Rep Pipeline Leaderboard {teamFilter !== 'ALL' ? `(${teamFilter})` : ''}
                   </h2>
                   <p className="text-xs text-slate-500 mt-0.5">
                     Ranked primarily by <strong>Pipeline Generated (Attained)</strong>, backed by <strong>Commit / Likely Path</strong> velocity.
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                
+                {/* Active Filter Indicators & Reset Buttons */}
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs bg-slate-100 text-slate-700 px-3 py-1.5 rounded-lg font-semibold border border-slate-200">
-                    Active Filter: {teamFilter} · {motionFilter}
+                    Team: {teamFilter}
                   </span>
+                  {selectedRep !== 'ALL' && (
+                    <button
+                      onClick={() => setSelectedRep('ALL')}
+                      className="text-xs bg-indigo-50 text-indigo-800 px-3 py-1.5 rounded-lg font-bold border border-indigo-200 flex items-center gap-1.5 hover:bg-indigo-100 transition"
+                    >
+                      <span>Rep: {selectedRep}</span>
+                      <X className="w-3.5 h-3.5 text-indigo-600" />
+                    </button>
+                  )}
+                  {(teamFilter !== 'ALL' || selectedRep !== 'ALL' || searchQuery) && (
+                    <button
+                      onClick={() => {
+                        setTeamFilter('ALL');
+                        setSelectedRep('ALL');
+                        setSearchQuery('');
+                      }}
+                      className="text-xs text-rose-600 hover:underline font-semibold px-2 py-1"
+                    >
+                      Reset All Filters
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Aggregation & Sorting Logic */}
               {(() => {
                 const repTotals = {};
                 filteredDeals.forEach(d => {
@@ -1085,7 +1153,6 @@ export default function App() {
                   r.path = r.commit + (r.likely * 0.5);
                 });
 
-                // Primary Rank: Attained DESC | Secondary: Path DESC | Tertiary: Pool DESC
                 const sortedReps = Object.values(repTotals).sort((a, b) => {
                   if (b.attained !== a.attained) return b.attained - a.attained;
                   if (b.path !== a.path) return b.path - a.path;
@@ -1093,6 +1160,9 @@ export default function App() {
                 });
 
                 const topReps = sortedReps.slice(0, 3);
+                
+                // Rep filtered deals below table
+                const dealsForSelectedRep = filteredDeals.filter(d => selectedRep === 'ALL' || d.ae === selectedRep);
 
                 return (
                   <>
@@ -1101,12 +1171,16 @@ export default function App() {
                       {topReps.map((r, idx) => {
                         const isGold = idx === 0;
                         const isSilver = idx === 1;
+                        const isSelected = selectedRep === r.name;
+
                         return (
                           <div 
                             key={r.name} 
-                            onClick={() => setSearchQuery(r.name === 'Unassigned' ? '' : r.name)}
+                            onClick={() => setSelectedRep(selectedRep === r.name ? 'ALL' : r.name)}
                             className={`border p-5 rounded-2xl relative transition hover:shadow-md cursor-pointer ${
-                              isGold 
+                              isSelected
+                                ? 'ring-2 ring-indigo-600 bg-indigo-50/40 border-indigo-400'
+                                : isGold 
                                 ? 'bg-gradient-to-br from-amber-50/80 via-orange-50/40 to-white border-amber-300 ring-2 ring-amber-200/60' 
                                 : isSilver 
                                 ? 'bg-gradient-to-br from-slate-50 via-slate-100/40 to-white border-slate-300' 
@@ -1120,22 +1194,20 @@ export default function App() {
                             </span>
                             
                             <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                              {isGold ? '🥇 Top Attained Leader' : isSilver ? '🥈 Second Pacing' : '🥉 Third Pacing'}
+                              {isGold ? 'Top Attained Leader' : isSilver ? 'Second Pacing' : 'Third Pacing'}
                             </div>
                             <div className="text-lg font-black text-slate-900 mt-1">{r.name}</div>
                             
-                            {/* Layer 1: Attained */}
-                            <div className="mt-3 bg-white/90 p-2.5 rounded-xl border border-slate-200 shadow-2xs">
-                              <span className="text-[10px] font-bold text-slate-500 uppercase">Layer 1: Pipeline Attained</span>
+                            <div className="mt-3 bg-white/90 p-2.5 rounded-xl border border-slate-200 shadow-sm">
+                              <span className="text-[10px] font-bold text-slate-500 uppercase">Pipeline Attained</span>
                               <div className="text-2xl font-black text-emerald-700 mt-0.5">
                                 ${r.attained.toLocaleString()}
                               </div>
                             </div>
 
-                            {/* Layer 2: Commit / Likely Path */}
                             <div className="mt-2.5 bg-slate-50/90 p-2.5 rounded-xl border border-slate-200 text-xs space-y-1">
                               <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase">
-                                <span>Layer 2: Commit / Likely Path</span>
+                                <span>Commit / Likely Path</span>
                                 <span className="text-indigo-600 font-bold">${r.path.toLocaleString()}</span>
                               </div>
                               <div className="flex justify-between text-[11px] text-slate-600">
@@ -1147,12 +1219,18 @@ export default function App() {
                                 <span>{r.count} Opportunities</span>
                               </div>
                             </div>
+
+                            <div className="mt-3 text-center">
+                              <span className="text-[11px] font-bold text-indigo-600">
+                                {isSelected ? '✓ Filtering this rep (Click to unfilter)' : 'Click to filter deals below →'}
+                              </span>
+                            </div>
                           </div>
                         );
                       })}
                     </div>
 
-                    {/* Full Standings Table */}
+                    {/* Standings Table */}
                     <div className="border border-slate-200 rounded-2xl overflow-hidden mb-6">
                       <div className="bg-slate-50/80 px-4 py-3 border-b border-slate-200 flex justify-between items-center">
                         <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Rep Standings & Conversion Ratios</span>
@@ -1164,18 +1242,21 @@ export default function App() {
                             <tr className="bg-slate-50/40 border-b border-slate-200 text-slate-500 font-semibold">
                               <th className="py-2.5 px-4 w-12 text-center">Rank</th>
                               <th className="py-2.5 px-4">Account Executive</th>
-                              <th className="py-2.5 px-4 text-right font-bold text-emerald-800">Layer 1: Attained</th>
+                              <th className="py-2.5 px-4 text-right font-bold text-emerald-800">Attained</th>
                               <th className="py-2.5 px-4 text-right text-emerald-700">Commit</th>
                               <th className="py-2.5 px-4 text-right text-indigo-600">Likely</th>
                               <th className="py-2.5 px-4 text-right font-bold text-slate-900">Path (Commit + 50% Likely)</th>
                               <th className="py-2.5 px-4 text-right">Total Working Pool</th>
                               <th className="py-2.5 px-4 text-center">Deals</th>
-                              <th className="py-2.5 px-4 text-center">Action</th>
+                              <th className="py-2.5 px-4 text-center">Filter</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {sortedReps.map((r, i) => (
-                              <tr key={r.name} className="hover:bg-slate-50/80 transition">
+                              <tr 
+                                key={r.name} 
+                                className={`hover:bg-slate-50/80 transition ${selectedRep === r.name ? 'bg-indigo-50/50' : ''}`}
+                              >
                                 <td className="py-3 px-4 text-center font-black text-slate-400">#{i + 1}</td>
                                 <td className="py-3 px-4 font-bold text-slate-900">
                                   {r.name}
@@ -1200,10 +1281,14 @@ export default function App() {
                                 </td>
                                 <td className="py-3 px-4 text-center">
                                   <button
-                                    onClick={() => setSearchQuery(r.name === 'Unassigned' ? '' : r.name)}
-                                    className="text-indigo-600 hover:text-indigo-900 font-semibold px-2 py-1 rounded bg-indigo-50 hover:bg-indigo-100 transition text-[11px]"
+                                    onClick={() => setSelectedRep(selectedRep === r.name ? 'ALL' : r.name)}
+                                    className={`px-2.5 py-1 rounded transition text-[11px] font-semibold ${
+                                      selectedRep === r.name
+                                        ? 'bg-indigo-600 text-white'
+                                        : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                                    }`}
                                   >
-                                    View Deals
+                                    {selectedRep === r.name ? 'Clear' : 'Filter Rep'}
                                   </button>
                                 </td>
                               </tr>
@@ -1214,31 +1299,31 @@ export default function App() {
                     </div>
 
                     {/* Opportunities Below Leaderboard */}
-                    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+                    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
                       <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-3">
                         <div>
                           <h3 className="font-bold text-slate-900 text-sm">
-                            Rep Opportunities Breakdown {searchQuery ? `(Filtered: "${searchQuery}")` : ''}
+                            Rep Opportunities Breakdown {selectedRep !== 'ALL' ? `(Rep: "${selectedRep}")` : '(All Reps)'}
                           </h3>
                           <p className="text-[11px] text-slate-500">
-                            Showing deals belonging to the active leaderboard selection. Use search or click "View Deals" on any rep.
+                            Showing {dealsForSelectedRep.length} deals. Click any rep above to isolate their deals.
                           </p>
                         </div>
 
                         <div className="flex items-center gap-2 w-full md:w-auto">
-                          {searchQuery && (
+                          {selectedRep !== 'ALL' && (
                             <button
-                              onClick={() => setSearchQuery('')}
-                              className="text-xs text-rose-600 hover:underline flex items-center gap-1 font-medium mr-1"
+                              onClick={() => setSelectedRep('ALL')}
+                              className="text-xs text-rose-600 hover:underline flex items-center gap-1 font-semibold mr-1"
                             >
-                              <X className="w-3.5 h-3.5" /> Clear Filter
+                              <X className="w-3.5 h-3.5" /> Show All Reps
                             </button>
                           )}
                           <div className="relative flex-1 md:w-64">
                             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                             <input
                               type="text"
-                              placeholder="Filter by Rep or Account..."
+                              placeholder="Search deals..."
                               value={searchQuery}
                               onChange={(e) => setSearchQuery(e.target.value)}
                               className="w-full text-xs pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500"
@@ -1257,13 +1342,12 @@ export default function App() {
                               <th className="py-3 px-3">Motion</th>
                               <th className="py-3 px-3 text-right">ACV</th>
                               <th className="py-3 px-3">Likelihood to Pipe</th>
-                              <th className="py-3 px-3">Agency Partners</th>
+                              <th className="py-3 px-3">Partner (s)</th>
                               <th className="py-3 px-3">Close Date</th>
-                              <th className="py-3 px-4 text-center">Action</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                            {filteredDeals.map((d) => (
+                            {dealsForSelectedRep.map((d) => (
                               <tr key={d.id} className="hover:bg-slate-50/80 transition">
                                 <td className="py-3 px-4 font-medium text-slate-900">
                                   <a 
@@ -1296,22 +1380,10 @@ export default function App() {
                                     {d.commitStatus}
                                   </span>
                                 </td>
-                                <td className="py-3 px-3 text-slate-600 max-w-[180px] truncate" title={d.agencyPartners || d.partners}>
-                                  {d.agencyPartners || d.partners || <span className="text-slate-300">—</span>}
+                                <td className="py-3 px-3 text-slate-600 max-w-[180px] truncate" title={d.partners}>
+                                  {d.partners || <span className="text-slate-300">—</span>}
                                 </td>
                                 <td className="py-3 px-3 text-slate-500">{d.closeDate}</td>
-                                <td className="py-3 px-4 text-center">
-                                  <button 
-                                    onClick={() => {
-                                      setEditingDeal(d);
-                                      setEditAcv(d.acv.toString());
-                                      setEditCommit(d.commitStatus);
-                                    }}
-                                    className="text-xs text-indigo-600 hover:text-indigo-900 font-semibold px-2 py-1 rounded bg-indigo-50 hover:bg-indigo-100 transition flex items-center gap-1 mx-auto"
-                                  >
-                                    <Edit3 className="w-3 h-3" /> Update
-                                  </button>
-                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -1325,15 +1397,168 @@ export default function App() {
           </div>
         )}
 
+        {/* TAB: CROSSBEAM OVERLAPS (PULLS STRICTLY FROM COLUMN Y) */}
+        {activeTab === 'crossbeam' && (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <Share2 className="w-5 h-5 text-[#635BFF]" /> Crossbeam Partner Overlaps against Opportunities
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Explore Crossbeam account overlaps by Partner technology and assigned Account Executive (Rep).
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg font-bold border border-indigo-200">
+                    {filteredCrossbeamData.length} Overlaps Found
+                  </span>
+                </div>
+              </div>
+
+              {/* FILTERS FOR PARTNER & REP */}
+              <div className="flex flex-col md:flex-row items-center gap-3 bg-slate-50/80 p-3 rounded-xl border border-slate-200 mb-6">
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Partner:</span>
+                  <select
+                    value={crossbeamPartnerFilter}
+                    onChange={(e) => setCrossbeamPartnerFilter(e.target.value)}
+                    className="text-xs font-semibold bg-white border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="ALL">All Partners ({crossbeamPartnersList.length})</option>
+                    {crossbeamPartnersList.map(p => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Rep (AE):</span>
+                  <select
+                    value={crossbeamRepFilter}
+                    onChange={(e) => setCrossbeamRepFilter(e.target.value)}
+                    className="text-xs font-semibold bg-white border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="ALL">All Reps ({crossbeamRepsList.length})</option>
+                    {crossbeamRepsList.map(r => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="relative flex-1 w-full md:w-auto">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search opportunity or partner..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full text-xs pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                {(crossbeamPartnerFilter !== 'ALL' || crossbeamRepFilter !== 'ALL' || searchQuery) && (
+                  <button
+                    onClick={() => {
+                      setCrossbeamPartnerFilter('ALL');
+                      setCrossbeamRepFilter('ALL');
+                      setSearchQuery('');
+                    }}
+                    className="text-xs text-rose-600 hover:underline flex items-center gap-1 font-semibold px-2 py-1"
+                  >
+                    <X className="w-3.5 h-3.5" /> Reset
+                  </button>
+                )}
+              </div>
+
+              {/* TABLE OF CROSSBEAM MAPPINGS */}
+              <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-50/75 border-b border-slate-200 text-slate-500 font-semibold">
+                        <th className="py-3 px-4">Crossbeam Partner</th>
+                        <th className="py-3 px-4">Opportunity Name</th>
+                        <th className="py-3 px-3">Account Executive (Rep)</th>
+                        <th className="py-3 px-3">Team</th>
+                        <th className="py-3 px-3 text-right">ACV</th>
+                        <th className="py-3 px-3">Stage</th>
+                        <th className="py-3 px-3">Likelihood to Pipe</th>
+                        <th className="py-3 px-3">Motion</th>
+                        <th className="py-3 px-3">Close Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredCrossbeamData.length === 0 ? (
+                        <tr>
+                          <td colSpan="9" className="text-center py-8 text-slate-400 text-xs">
+                            No Crossbeam partner overlaps found for this selection.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredCrossbeamData.map((item, idx) => (
+                          <tr key={`${item.dealId}-${item.partner}-${idx}`} className="hover:bg-slate-50/80 transition">
+                            <td className="py-3 px-4 font-bold text-slate-900 flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-[#635BFF]"></span>
+                              {item.partner}
+                            </td>
+                            <td className="py-3 px-4 font-medium text-slate-900">
+                              <a 
+                                href={`https://braze.lightning.force.com/lightning/r/Opportunity/${item.dealId}/view`}
+                                target="_blank" 
+                                rel="noreferrer"
+                                className="text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1"
+                              >
+                                {item.dealName}
+                                <ExternalLink className="w-3 h-3 text-slate-400" />
+                              </a>
+                            </td>
+                            <td className="py-3 px-3 font-semibold text-slate-800">{item.ae}</td>
+                            <td className="py-3 px-3 text-slate-600">{item.team}</td>
+                            <td className="py-3 px-3 text-right font-bold text-slate-900">${item.acv.toLocaleString()}</td>
+                            <td className="py-3 px-3 text-slate-600">{item.stage}</td>
+                            <td className="py-3 px-3">
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium ${
+                                item.commitStatus === 'Commit' ? 'bg-emerald-100 text-emerald-800' :
+                                item.commitStatus === 'Likely' ? 'bg-indigo-100 text-indigo-800' :
+                                item.commitStatus === 'Attained' ? 'bg-teal-100 text-teal-800 font-bold' :
+                                'bg-slate-100 text-slate-600'
+                              }`}>
+                                {item.commitStatus}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                item.motion === 'Inbound' ? 'bg-sky-50 text-sky-700 border border-sky-200' : 'bg-purple-50 text-purple-700 border border-purple-200'
+                              }`}>
+                                {item.motion}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-slate-500">{item.closeDate}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB: PARTNER ECOSYSTEM (STRICTLY COLUMN H: PARTNER (S)) */}
         {activeTab === 'partners' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                    <ShieldCheck className="w-5 h-5 text-indigo-600" /> Partner Ecosystem Leaderboard {teamFilter !== 'ALL' ? `(${teamFilter})` : ''}
+                    <Users className="w-5 h-5 text-indigo-600" /> Partner Ecosystem Leaderboard {teamFilter !== 'ALL' ? `(${teamFilter})` : ''}
                   </h2>
-                  <p className="text-xs text-slate-500">Tracking tech and agency partners tagged across pipeline</p>
+                  <p className="text-xs text-slate-500">
+                    Aggregated strictly from the <strong>Partner (s)</strong> column (Agency & Tech Partners).
+                  </p>
                 </div>
                 <div className="flex gap-4 text-xs font-semibold">
                   <div className="bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-lg text-indigo-900">
@@ -1357,26 +1582,34 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {partnerData.slice(0, 15).map((p, idx) => (
-                      <tr key={p.name} className="hover:bg-slate-50/80 transition">
-                        <td className="py-3 px-4 font-bold text-slate-900 flex items-center gap-2">
-                          <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-[10px]">
-                            {idx + 1}
-                          </span>
-                          {p.name}
-                        </td>
-                        <td className="py-3 px-4 text-center font-medium text-slate-700">{p.count} deals</td>
-                        <td className="py-3 px-4 text-center font-bold text-emerald-600">{p.attachedCount} attached</td>
-                        <td className="py-3 px-4 text-right font-extrabold text-slate-900">${p.acv.toLocaleString()}</td>
-                        <td className="py-3 px-4 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                            p.attachedCount > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
-                          }`}>
-                            {p.attachedCount > 0 ? 'Active Attachment' : 'Ecosystem Tag'}
-                          </span>
+                    {partnerData.length === 0 ? (
+                      <tr>
+                        <td colSpan="5" className="text-center py-8 text-slate-400 text-xs">
+                          No partners tagged in Column H for the current team filter.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      partnerData.slice(0, 15).map((p, idx) => (
+                        <tr key={p.name} className="hover:bg-slate-50/80 transition">
+                          <td className="py-3 px-4 font-bold text-slate-900 flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-[10px]">
+                              {idx + 1}
+                            </span>
+                            {p.name}
+                          </td>
+                          <td className="py-3 px-4 text-center font-medium text-slate-700">{p.count} deals</td>
+                          <td className="py-3 px-4 text-center font-bold text-emerald-600">{p.attachedCount} attached</td>
+                          <td className="py-3 px-4 text-right font-extrabold text-slate-900">${p.acv.toLocaleString()}</td>
+                          <td className="py-3 px-4 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                              p.attachedCount > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                            }`}>
+                              {p.attachedCount > 0 ? 'Active Attachment' : 'Ecosystem Tag'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1384,6 +1617,7 @@ export default function App() {
           </div>
         )}
 
+        {/* TAB: FOCUS OPPORTUNITIES (0-90 & 91-180 DAYS) */}
         {activeTab === 'focus' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
@@ -1424,7 +1658,7 @@ export default function App() {
 
                         <div className="space-y-2.5">
                           {t1Deals.length === 0 ? (
-                            <div className="text-xs text-slate-400 p-4 text-center border border-dashed rounded-xl">No Tier 1 deals found for this selection.</div>
+                            <div className="text-xs text-slate-400 p-4 text-center border border-dashed rounded-xl">No Tier 1 deals found.</div>
                           ) : (
                             t1Deals.map(d => (
                               <div key={d.id} className="bg-white p-3.5 rounded-xl border border-slate-200 hover:border-rose-300 transition shadow-xs flex flex-col justify-between gap-2">
@@ -1447,16 +1681,7 @@ export default function App() {
                                 </div>
                                 <div className="border-t border-slate-100 pt-2 flex items-center justify-between text-[11px] text-slate-500">
                                   <span>AE: {d.ae}</span>
-                                  <button 
-                                    onClick={() => {
-                                      setEditingDeal(d);
-                                      setEditAcv(d.acv.toString());
-                                      setEditCommit(d.commitStatus);
-                                    }}
-                                    className="text-indigo-600 font-semibold hover:text-indigo-800 flex items-center gap-1"
-                                  >
-                                    <Edit3 className="w-3 h-3" /> Update
-                                  </button>
+                                  <span>Close Date: {d.closeDate}</span>
                                 </div>
                               </div>
                             ))
@@ -1487,7 +1712,7 @@ export default function App() {
 
                         <div className="space-y-2.5">
                           {t2Deals.length === 0 ? (
-                            <div className="text-xs text-slate-400 p-4 text-center border border-dashed rounded-xl">No Tier 2 deals found for this selection.</div>
+                            <div className="text-xs text-slate-400 p-4 text-center border border-dashed rounded-xl">No Tier 2 deals found.</div>
                           ) : (
                             t2Deals.map(d => (
                               <div key={d.id} className="bg-white p-3.5 rounded-xl border border-slate-200 hover:border-amber-300 transition shadow-xs flex flex-col justify-between gap-2">
@@ -1510,16 +1735,7 @@ export default function App() {
                                 </div>
                                 <div className="border-t border-slate-100 pt-2 flex items-center justify-between text-[11px] text-slate-500">
                                   <span>AE: {d.ae}</span>
-                                  <button 
-                                    onClick={() => {
-                                      setEditingDeal(d);
-                                      setEditAcv(d.acv.toString());
-                                      setEditCommit(d.commitStatus);
-                                    }}
-                                    className="text-indigo-600 font-semibold hover:text-indigo-800 flex items-center gap-1"
-                                  >
-                                    <Edit3 className="w-3 h-3" /> Update
-                                  </button>
+                                  <span>Close Date: {d.closeDate}</span>
                                 </div>
                               </div>
                             ))
@@ -1534,70 +1750,6 @@ export default function App() {
           </div>
         )}
       </main>
-
-      {editingDeal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                <Edit3 className="w-4 h-4 text-indigo-600" /> Update Opportunity
-              </h3>
-              <button onClick={() => setEditingDeal(null)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="text-xs text-slate-600 font-semibold mb-4 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-              {editingDeal.name}
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">ACV ($ Amount)</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">$</span>
-                  <input 
-                    type="number" 
-                    value={editAcv} 
-                    onChange={(e) => setEditAcv(e.target.value)} 
-                    className="w-full pl-7 pr-3 py-2 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-600 font-semibold text-slate-900" 
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Likelihood to Move to Pipe / Commit</label>
-                <select 
-                  value={editCommit} 
-                  onChange={(e) => setEditCommit(e.target.value)} 
-                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-600 font-semibold text-slate-900 bg-white"
-                >
-                  <option value="Non Commit">Non Commit</option>
-                  <option value="Commit">Commit</option>
-                  <option value="Likely">Likely</option>
-                  <option value="Attained">Attained (Stage 2+)</option>
-                  <option value="Closed Lost">Closed Lost</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
-              <button 
-                onClick={() => setEditingDeal(null)} 
-                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={handleSaveEdit} 
-                className="px-4 py-2 text-xs font-semibold bg-[#FF595A] hover:bg-[#e04849] text-white rounded-lg shadow-sm flex items-center gap-1.5 transition active:scale-95"
-              >
-                <Save className="w-3.5 h-3.5" /> Update Dashboard
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
