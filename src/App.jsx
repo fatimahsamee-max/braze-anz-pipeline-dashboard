@@ -12,7 +12,7 @@ import {
 } from 'recharts';
 
 const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSChLkaPJrSjfFtM1vTWbkl2uffjadl-oV5qCdkTIIqsE7kVU_3eh3Vp4suNJfjUltlcT1t00Pi9KIP/pub?gid=2048510077&single=true&output=csv";
-const HISTORY_CSV_URL = ""; // Optional: Paste the published CSV URL of 'Pipeline_History' here
+const HISTORY_CSV_URL = ""; // Optional: Published CSV URL of 'Pipeline_History' tab
 
 const INITIAL_TARGETS = {
   total: 18710000,
@@ -27,9 +27,15 @@ const INITIAL_TARGETS = {
 };
 
 // Executive Summary: Day-over-Day and Week-over-Week Pipeline Velocity
-function ExecutiveMovementSummary({ historyData, deals, targets }) {
+function ExecutiveMovementSummary({ historyData, deals, targets, activeTeamFilter }) {
   const [timeframe, setTimeframe] = useState('DoD');
-  const [selectedTeam, setSelectedTeam] = useState('ALL');
+  const [selectedTeam, setSelectedTeam] = useState(activeTeamFilter || 'ALL');
+
+  useEffect(() => {
+    if (activeTeamFilter) {
+      setSelectedTeam(activeTeamFilter);
+    }
+  }, [activeTeamFilter]);
 
   const currentTeamMetrics = useMemo(() => {
     let filteredDeals = deals;
@@ -59,7 +65,7 @@ function ExecutiveMovementSummary({ historyData, deals, targets }) {
 
   const deltas = useMemo(() => {
     if (!historyData || historyData.length === 0) {
-      return { attained: 0, commit: 0, likely: 0, pool: 0, gap: 0, baselineDate: 'Awaiting first daily snapshot' };
+      return { attained: 0, commit: 0, likely: 0, pool: 0, gap: 0, baselineDate: 'Awaiting daily snapshot' };
     }
 
     const teamHistory = historyData
@@ -184,7 +190,7 @@ function ExecutiveMovementSummary({ historyData, deals, targets }) {
         </div>
 
         <div className="bg-slate-50/70 p-3 rounded-xl border border-slate-200 col-span-2 md:col-span-1">
-          <div className="text-[10px] uppercase font-bold text-slate-500 mb-1">Segment Gap</div>
+          <div className="text-[10px] uppercase font-bold text-slate-500 mb-1">Attained Gap</div>
           <div className="text-lg font-black text-rose-600">${(currentTeamMetrics.gap / 1000000).toFixed(2)}M</div>
           <div className="mt-2">{formatDelta(deltas.gap, true)}</div>
         </div>
@@ -404,7 +410,6 @@ export default function App() {
       const csvText = await res.text();
       const rawLines = csvText.split(/\r\n|\n|\r/).filter(l => l.trim() !== '');
 
-      // Locate Opportunity Header Row
       let headerIdx = -1;
       for (let i = 0; i < Math.min(rawLines.length, 50); i++) {
         const lineLower = rawLines[i].toLowerCase();
@@ -432,12 +437,13 @@ export default function App() {
         const acvCol = getIdx(['acv', 'amount']);
         const aeCol = getIdx(['ae', 'owner']);
         const bdrCol = getIdx(['bdr']);
-        const partnersCol = headers.findIndex(h => h.includes('partner') && !h.includes('attach') && !h.includes('source'));
+        const partnersCol = headers.findIndex(h => h.includes('partner (s)') || (h.includes('partner') && !h.includes('attached') && !h.includes('sourced') && !h.includes('agency')));
         const attachedCol = getIdx(['partner attached', 'attached']);
         const commitCol = getIdx(['liklihood', 'likelihood', 'stage 1 commit', 'commit']);
         const dateCol = getIdx(['close date']);
         const motionCol = getIdx(['inbound/outbound', 'motion']);
         const typeCol = headers.findIndex(h => h === 'type');
+        const agencyCol = headers.findIndex(h => h.includes('agency') || h.includes('crossbeam'));
 
         const parsedDeals = [];
 
@@ -470,6 +476,7 @@ export default function App() {
             ae: cols[aeCol !== -1 ? aeCol : 5] || 'Unassigned',
             bdr: cols[bdrCol !== -1 ? bdrCol : 6] || '',
             partners: cols[partnersCol !== -1 ? partnersCol : 7] || '',
+            agencyPartners: agencyCol !== -1 ? cols[agencyCol] : '',
             partnerAttached: isAttached,
             commitStatus: rawCommit,
             closeDate: cols[dateCol !== -1 ? dateCol : 20] || '',
@@ -483,7 +490,6 @@ export default function App() {
         }
       }
 
-      // Fetch snapshot log if URL is configured
       if (HISTORY_CSV_URL && !HISTORY_CSV_URL.includes("PASTE_")) {
         try {
           const hUrl = `${HISTORY_CSV_URL}&_t=${Date.now()}`;
@@ -536,10 +542,25 @@ export default function App() {
     setEditingDeal(null);
   };
 
+  // Metrics dynamically respond to BOTH Team Filter and Motion Filter
   const metrics = useMemo(() => {
     let relevantDeals = deals;
+    
+    // 1. Team Filter
+    if (teamFilter !== 'ALL') {
+      relevantDeals = relevantDeals.filter(d => {
+        const t = (d.team || '').toUpperCase();
+        if (teamFilter === 'ANZ ENT') return t.includes('ENT');
+        if (teamFilter === 'ANZ Scale') return t.includes('SCALE');
+        if (teamFilter === 'ANZ SMB') return t.includes('SMB');
+        if (teamFilter === 'ANZ AM') return t.includes('AM') || t.includes('STRATEGIC');
+        return false;
+      });
+    }
+
+    // 2. Motion Filter
     if (motionFilter !== 'ALL') {
-      relevantDeals = deals.filter(d => d.motion === motionFilter);
+      relevantDeals = relevantDeals.filter(d => d.motion === motionFilter);
     }
 
     const qualifyingPipe = relevantDeals.filter(d => d.stage === 'Qualifying' || d.stage === 'Discovery+').reduce((sum, d) => sum + d.acv, 0);
@@ -551,13 +572,23 @@ export default function App() {
     const likelyPipe = relevantDeals.filter(d => d.commitStatus === 'Likely').reduce((sum, d) => sum + d.acv, 0);
     const pathPipe = commitPipe + (likelyPipe * 0.5);
 
+    // Dynamic Target Calculation
     let activeTarget = targets.total;
-    if (motionFilter === 'Inbound') activeTarget = targets.inbound;
-    if (motionFilter === 'Outbound') activeTarget = targets.outbound;
+    if (teamFilter !== 'ALL') {
+      activeTarget = targets.teams[teamFilter] || targets.total;
+    } else {
+      if (motionFilter === 'Inbound') activeTarget = targets.inbound;
+      if (motionFilter === 'Outbound') activeTarget = targets.outbound;
+    }
 
     const attainedPercent = activeTarget > 0 ? ((attainedPipe / activeTarget) * 100).toFixed(1) : '0.0';
-    const gap = Math.max(0, activeTarget - attainedPipe);
-    const remainingGap = Math.max(0, gap - pathPipe);
+    
+    // Remaining Gap strictly calculated from ATTAINED to TARGET
+    const remainingAttainedGap = Math.max(0, activeTarget - attainedPipe);
+    
+    // Gap to Working Pool: Target minus Total Working Pool
+    const workingPoolGap = Math.max(0, activeTarget - totalWorkingPool);
+    const workingPoolCoverage = activeTarget > 0 ? ((totalWorkingPool / activeTarget) * 100).toFixed(1) : '0.0';
 
     const partnerAttachedDeals = relevantDeals.filter(d => d.partnerAttached);
     const partnerAttachedAcv = partnerAttachedDeals.reduce((sum, d) => sum + d.acv, 0);
@@ -573,19 +604,34 @@ export default function App() {
       commitPipe,
       likelyPipe,
       pathPipe,
-      gap,
-      remainingGap,
+      remainingAttainedGap,
+      workingPoolGap,
+      workingPoolCoverage,
       partnerAttachedCount: partnerAttachedDeals.length,
       partnerAttachedAcv,
-      attachRate
+      attachRate,
+      dealCount: relevantDeals.length
     };
-  }, [deals, targets, motionFilter]);
+  }, [deals, targets, motionFilter, teamFilter]);
 
   const partnerData = useMemo(() => {
+    let relevantDeals = deals;
+    if (teamFilter !== 'ALL') {
+      relevantDeals = relevantDeals.filter(d => {
+        const t = (d.team || '').toUpperCase();
+        if (teamFilter === 'ANZ ENT') return t.includes('ENT');
+        if (teamFilter === 'ANZ Scale') return t.includes('SCALE');
+        if (teamFilter === 'ANZ SMB') return t.includes('SMB');
+        if (teamFilter === 'ANZ AM') return t.includes('AM') || t.includes('STRATEGIC');
+        return false;
+      });
+    }
+
     const counts = {};
-    deals.forEach(d => {
-      if (d.partners) {
-        const parts = d.partners.split(';').map(p => p.trim()).filter(Boolean);
+    relevantDeals.forEach(d => {
+      const allPartners = [d.partners, d.agencyPartners].filter(Boolean).join(';');
+      if (allPartners) {
+        const parts = allPartners.split(';').map(p => p.trim()).filter(Boolean);
         parts.forEach(p => {
           if (!counts[p]) counts[p] = { name: p, count: 0, acv: 0, attachedCount: 0 };
           counts[p].count += 1;
@@ -595,10 +641,30 @@ export default function App() {
       }
     });
     return Object.values(counts).sort((a, b) => b.acv - a.acv || b.count - a.count);
-  }, [deals]);
+  }, [deals, teamFilter]);
+
+  const filteredDeals = useMemo(() => {
+    return deals.filter(d => {
+      const matchesSearch = d.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            d.ae.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            d.partners.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            (d.agencyPartners && d.agencyPartners.toLowerCase().includes(searchQuery.toLowerCase()));
+      
+      const t = (d.team || '').toUpperCase();
+      let matchesTeam = true;
+      if (teamFilter === 'ANZ ENT') matchesTeam = t.includes('ENT');
+      else if (teamFilter === 'ANZ Scale') matchesTeam = t.includes('SCALE');
+      else if (teamFilter === 'ANZ SMB') matchesTeam = t.includes('SMB');
+      else if (teamFilter === 'ANZ AM') matchesTeam = t.includes('AM') || t.includes('STRATEGIC');
+
+      const matchesCommit = commitFilter === 'ALL' || d.commitStatus === commitFilter;
+      const matchesMotion = motionFilter === 'ALL' || d.motion === motionFilter;
+      return matchesSearch && matchesTeam && matchesCommit && matchesMotion;
+    });
+  }, [deals, searchQuery, teamFilter, commitFilter, motionFilter]);
 
   const priorityDeals = useMemo(() => {
-    return deals.map(d => {
+    return filteredDeals.map(d => {
       const days = getDaysUntilClose(d.closeDate);
       let tier = null;
       let badgeColor = '';
@@ -616,19 +682,7 @@ export default function App() {
       return { ...d, days, tier, badgeColor };
     }).filter(d => d.tier !== null)
       .sort((a, b) => a.days - b.days);
-  }, [deals]);
-
-  const filteredDeals = useMemo(() => {
-    return deals.filter(d => {
-      const matchesSearch = d.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            d.ae.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            d.partners.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesTeam = teamFilter === 'ALL' || d.team === teamFilter;
-      const matchesCommit = commitFilter === 'ALL' || d.commitStatus === commitFilter;
-      const matchesMotion = motionFilter === 'ALL' || d.motion === motionFilter;
-      return matchesSearch && matchesTeam && matchesCommit && matchesMotion;
-    });
-  }, [deals, searchQuery, teamFilter, commitFilter, motionFilter]);
+  }, [filteredDeals]);
 
   return (
     <div className="min-h-screen bg-[#F8F9FC] text-slate-900 flex flex-col font-sans">
@@ -717,47 +771,73 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-6 py-6 w-full flex-1">
         {activeTab === 'overview' && (
           <div className="space-y-6">
-            {/* Executive Movement Summary (DoD & WoW with Segment Selector) */}
+            {/* Executive Movement Summary */}
             <ExecutiveMovementSummary 
               historyData={historyData} 
               deals={deals} 
               targets={targets} 
+              activeTeamFilter={teamFilter}
             />
 
-            {/* Overarching Pipeline Motion Selector */}
-            <div className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-2">Pipeline Motion:</span>
-              <div className="flex gap-1.5">
-                {['ALL', 'Inbound', 'Outbound'].map(m => (
-                  <button
-                    key={m}
-                    onClick={() => setMotionFilter(m)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                      motionFilter === m ? 'bg-[#1B0B3B] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    {m === 'ALL' ? 'Overarching Pipe ($18.71M)' : m === 'Inbound' ? 'Inbound ($10.00M)' : 'Outbound ($10.82M)'}
-                  </button>
-                ))}
+            {/* DUAL GLOBAL FILTERS: TEAM SEGMENT & PIPELINE MOTION */}
+            <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
+              {/* Team Filter */}
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                  <Filter className="w-3.5 h-3.5 text-indigo-600" /> Team:
+                </span>
+                <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs font-semibold overflow-x-auto">
+                  {['ALL', 'ANZ ENT', 'ANZ Scale', 'ANZ SMB', 'ANZ AM'].map(tm => (
+                    <button
+                      key={tm}
+                      onClick={() => setTeamFilter(tm)}
+                      className={`px-3 py-1.5 rounded-md transition whitespace-nowrap ${
+                        teamFilter === tm ? 'bg-[#1B0B3B] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {tm}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Motion Filter */}
+              <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Motion:</span>
+                <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs font-semibold">
+                  {['ALL', 'Inbound', 'Outbound'].map(m => (
+                    <button
+                      key={m}
+                      onClick={() => setMotionFilter(m)}
+                      className={`px-3 py-1.5 rounded-md transition ${
+                        motionFilter === m ? 'bg-[#FF595A] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
-            {/* Top 4 Summary Widgets */}
+            {/* TOP 4 SUMMARY WIDGETS WITH UPDATED GAP LOGIC */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* 1. Target */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
-                    <span>Q4 TARGET</span>
+                    <span>{teamFilter === 'ALL' ? 'Q4 TARGET' : `${teamFilter} TARGET`}</span>
                     <Target className="w-4 h-4 text-indigo-600" />
                   </div>
                   <div className="text-2xl font-bold text-slate-900">${(metrics.activeTarget / 1000000).toFixed(2)}M</div>
                 </div>
                 <div className="text-xs text-slate-500 mt-2 flex items-center justify-between pt-2 border-t border-slate-100">
-                  <span>Inbound: ${(targets.inbound / 1000000).toFixed(2)}M</span>
-                  <span>Outbound: ${(targets.outbound / 1000000).toFixed(2)}M</span>
+                  <span>Scope: {teamFilter}</span>
+                  <span>{metrics.dealCount} Total Deals</span>
                 </div>
               </div>
 
+              {/* 2. Pipeline Generated (Attained) */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
@@ -767,11 +847,12 @@ export default function App() {
                   <div className="text-2xl font-bold text-slate-900">${(metrics.attainedPipe / 1000000).toFixed(2)}M</div>
                 </div>
                 <div className="text-xs font-semibold text-emerald-700 mt-2 flex items-center justify-between pt-2 border-t border-slate-100">
-                  <span>{metrics.attainedPercent}% of Q4 Target</span>
+                  <span>{metrics.attainedPercent}% of Target</span>
                   <span className="text-[11px] font-normal text-slate-400">Stage 2+ Progress</span>
                 </div>
               </div>
 
+              {/* 3. Commit / Likely Path WITH GAP TO WORKING POOL */}
               <div className="bg-white p-5 rounded-2xl border-2 border-indigo-200 shadow-sm flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
@@ -780,63 +861,86 @@ export default function App() {
                   </div>
                   <div className="text-2xl font-bold text-[#1B0B3B]">${(metrics.pathPipe / 1000000).toFixed(2)}M</div>
                 </div>
-                <div className="text-[11.5px] text-slate-500 mt-2 pt-2 border-t border-slate-100 space-y-0.5">
-                  <div className="flex justify-between font-medium text-slate-700">
-                    <span>Working Pool:</span>
-                    <span>${(metrics.totalWorkingPool / 1000000).toFixed(2)}M</span>
+                
+                {/* Working Pool & Gap to Working Pool */}
+                <div className="text-[11.5px] text-slate-600 mt-2 pt-2 border-t border-slate-100 space-y-1">
+                  <div className="flex justify-between font-semibold">
+                    <span>Total Working Pool:</span>
+                    <span className="text-indigo-900">${(metrics.totalWorkingPool / 1000000).toFixed(2)}M ({metrics.workingPoolCoverage}%)</span>
                   </div>
-                  <div className="flex justify-between text-[10.5px] text-slate-400">
+                  <div className="flex justify-between text-amber-700 font-medium text-[11px]">
+                    <span>Gap to Working Pool:</span>
+                    <span>${(metrics.workingPoolGap / 1000000).toFixed(2)}M</span>
+                  </div>
+                  <div className="flex justify-between text-[10px] text-slate-400 pt-0.5">
                     <span>Qual: ${(metrics.qualifyingPipe / 1000000).toFixed(2)}M</span>
                     <span>Prosp: ${(metrics.prospectingPipe / 1000000).toFixed(2)}M</span>
                   </div>
                 </div>
               </div>
 
+              {/* 4. REMAINING GAP: STRICTLY CALCULATED FROM ATTAINED TO TARGET */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
-                    <span>REMAINING GAP</span>
+                    <span>REMAINING GAP (ATTAINED TO TARGET)</span>
                     <AlertCircle className="w-4 h-4 text-rose-500" />
                   </div>
-                  <div className="text-2xl font-bold text-rose-600">${(metrics.remainingGap / 1000000).toFixed(2)}M</div>
+                  <div className="text-2xl font-bold text-rose-600">${(metrics.remainingAttainedGap / 1000000).toFixed(2)}M</div>
                 </div>
                 <div className="text-xs text-slate-500 mt-2 flex items-center justify-between pt-2 border-t border-slate-100">
-                  <span>Gross Gap: ${(metrics.gap / 1000000).toFixed(2)}M</span>
-                  <span className="text-rose-500 font-semibold">{((metrics.remainingGap / metrics.activeTarget) * 100).toFixed(0)}% Open</span>
+                  <span>Target: ${(metrics.activeTarget / 1000000).toFixed(2)}M</span>
+                  <span className="text-rose-600 font-semibold">
+                    {metrics.activeTarget > 0 ? ((metrics.remainingAttainedGap / metrics.activeTarget) * 100).toFixed(0) : 0}% Unattained
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* Team Speedometer Dials */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-              <TeamSpeedometer
-                title="ANZ ENT NB Pipe Pacing"
-                target={targets.teams['ANZ ENT']}
-                deals={deals.filter(d => d.team && d.team.includes('ENT'))}
-              />
-              <TeamSpeedometer
-                title="ANZ Scale NB Pipe Pacing"
-                target={targets.teams['ANZ Scale']}
-                deals={deals.filter(d => d.team && d.team.includes('Scale'))}
-              />
-              <TeamSpeedometer
-                title="ANZ SMB NB Pipe Pacing"
-                target={targets.teams['ANZ SMB']}
-                deals={deals.filter(d => d.team && d.team.includes('SMB'))}
-              />
-              <TeamSpeedometer
-                title="ANZ AM NB Pipe Pacing"
-                target={targets.teams['ANZ AM']}
-                deals={deals.filter(d => d.team && (d.team.includes('AM') || d.team.includes('Strategic')))}
-              />
-            </div>
+            {/* TEAM SPEEDOMETER DIALS */}
+            {teamFilter === 'ALL' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                <TeamSpeedometer
+                  title="ANZ ENT NB Pipe Pacing"
+                  target={targets.teams['ANZ ENT']}
+                  deals={deals.filter(d => d.team && d.team.includes('ENT'))}
+                />
+                <TeamSpeedometer
+                  title="ANZ Scale NB Pipe Pacing"
+                  target={targets.teams['ANZ Scale']}
+                  deals={deals.filter(d => d.team && d.team.includes('Scale'))}
+                />
+                <TeamSpeedometer
+                  title="ANZ SMB NB Pipe Pacing"
+                  target={targets.teams['ANZ SMB']}
+                  deals={deals.filter(d => d.team && d.team.includes('SMB'))}
+                />
+                <TeamSpeedometer
+                  title="ANZ AM NB Pipe Pacing"
+                  target={targets.teams['ANZ AM']}
+                  deals={deals.filter(d => d.team && (d.team.includes('AM') || d.team.includes('Strategic')))}
+                />
+              </div>
+            ) : (
+              <div className="max-w-md mx-auto">
+                <TeamSpeedometer
+                  title={`${teamFilter} NB Pipe Pacing`}
+                  target={targets.teams[teamFilter] || targets.total}
+                  deals={filteredDeals}
+                />
+              </div>
+            )}
 
-            {/* Opportunities Drill-down Table */}
+            {/* Opportunities Table Filtered by Selected Team */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-slate-900 text-sm">Qualifying & Prospecting Pipeline Drill-down</h3>
-                  <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">{filteredDeals.length} Opportunities</span>
+                  <h3 className="font-bold text-slate-900 text-sm">
+                    {teamFilter === 'ALL' ? 'All Opportunities' : `${teamFilter} Opportunities`} Drill-down
+                  </h3>
+                  <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">
+                    {filteredDeals.length} Opportunities
+                  </span>
                 </div>
 
                 <div className="flex items-center gap-2 w-full md:w-auto">
@@ -863,7 +967,7 @@ export default function App() {
                       <th className="py-3 px-3 text-right">ACV</th>
                       <th className="py-3 px-3">AE / BDR</th>
                       <th className="py-3 px-3">Likelihood to Pipe</th>
-                      <th className="py-3 px-3">Partner Attached</th>
+                      <th className="py-3 px-3">Agency Partners</th>
                       <th className="py-3 px-3">Close Date</th>
                       <th className="py-3 px-4 text-center">Action</th>
                     </tr>
@@ -896,19 +1000,14 @@ export default function App() {
                           <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium ${
                             d.commitStatus === 'Commit' ? 'bg-emerald-100 text-emerald-800' :
                             d.commitStatus === 'Likely' ? 'bg-indigo-100 text-indigo-800' :
+                            d.commitStatus === 'Attained' ? 'bg-teal-100 text-teal-800 font-bold' :
                             'bg-slate-100 text-slate-600'
                           }`}>
                             {d.commitStatus}
                           </span>
                         </td>
-                        <td className="py-3 px-3">
-                          {d.partnerAttached ? (
-                            <span className="text-emerald-600 font-semibold flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3" /> Yes
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">No</span>
-                          )}
+                        <td className="py-3 px-3 text-slate-600 max-w-[200px] truncate" title={d.agencyPartners || d.partners}>
+                          {d.agencyPartners || d.partners || <span className="text-slate-300">—</span>}
                         </td>
                         <td className="py-3 px-3 text-slate-500">{d.closeDate}</td>
                         <td className="py-3 px-4 text-center">
@@ -934,34 +1033,294 @@ export default function App() {
 
         {activeTab === 'leaderboard' && (
           <div className="space-y-6">
+            {/* Header & Stats Banner */}
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <h2 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
-                <Award className="w-5 h-5 text-amber-500" /> Account Executive (AE) Pipeline Leaderboard
-              </h2>
-              <p className="text-xs text-slate-500 mb-4">Ranked by total Working Pipeline ACV generated in Q4</p>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                {(() => {
-                  const repTotals = {};
-                  deals.forEach(d => {
-                    const rep = d.ae || 'Unassigned';
-                    if (!repTotals[rep]) repTotals[rep] = { name: rep, acv: 0, count: 0 };
-                    repTotals[rep].acv += d.acv;
-                    repTotals[rep].count += 1;
-                  });
-                  const sortedReps = Object.values(repTotals).sort((a, b) => b.acv - a.acv).slice(0, 3);
-                  
-                  return sortedReps.map((r, idx) => (
-                    <div key={r.name} className={`${idx === 0 ? 'bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200' : 'bg-slate-50 border-slate-200'} border p-4 rounded-xl relative`}>
-                      <span className={`absolute top-3 right-3 text-2xl font-black ${idx === 0 ? 'text-amber-300' : 'text-slate-300'}`}>#{idx + 1}</span>
-                      <div className={`text-xs font-bold ${idx === 0 ? 'text-amber-800' : 'text-slate-600'}`}>{idx === 0 ? 'Top Generator' : idx === 1 ? 'Second Pacing' : 'Third Pacing'}</div>
-                      <div className="text-lg font-extrabold text-slate-900 mt-1">{r.name}</div>
-                      <div className={`text-2xl font-black ${idx === 0 ? 'text-amber-600' : 'text-indigo-600'} mt-2`}>${r.acv.toLocaleString()}</div>
-                      <div className="text-xs text-slate-600 mt-1">{r.count} Opportunities</div>
-                    </div>
-                  ));
-                })()}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <Award className="w-5 h-5 text-amber-500" /> Account Executive (AE) Pipeline Leaderboard {teamFilter !== 'ALL' ? `(${teamFilter})` : ''}
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Ranked primarily by <strong>Pipeline Generated (Attained)</strong>, backed by <strong>Commit / Likely Path</strong> velocity.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs bg-slate-100 text-slate-700 px-3 py-1.5 rounded-lg font-semibold border border-slate-200">
+                    Active Filter: {teamFilter} · {motionFilter}
+                  </span>
+                </div>
               </div>
+
+              {/* Aggregation & Sorting Logic */}
+              {(() => {
+                const repTotals = {};
+                filteredDeals.forEach(d => {
+                  const rep = d.ae || 'Unassigned';
+                  if (!repTotals[rep]) {
+                    repTotals[rep] = { 
+                      name: rep, 
+                      attained: 0, 
+                      commit: 0, 
+                      likely: 0, 
+                      pool: 0, 
+                      count: 0,
+                      deals: [] 
+                    };
+                  }
+                  
+                  repTotals[rep].pool += d.acv;
+                  repTotals[rep].count += 1;
+                  repTotals[rep].deals.push(d);
+
+                  if (d.commitStatus === 'Attained' || d.stage === 'Closed Won') {
+                    repTotals[rep].attained += d.acv;
+                  } else if (d.commitStatus === 'Commit') {
+                    repTotals[rep].commit += d.acv;
+                  } else if (d.commitStatus === 'Likely') {
+                    repTotals[rep].likely += d.acv;
+                  }
+                });
+
+                Object.values(repTotals).forEach(r => {
+                  r.path = r.commit + (r.likely * 0.5);
+                });
+
+                // Primary Rank: Attained DESC | Secondary: Path DESC | Tertiary: Pool DESC
+                const sortedReps = Object.values(repTotals).sort((a, b) => {
+                  if (b.attained !== a.attained) return b.attained - a.attained;
+                  if (b.path !== a.path) return b.path - a.path;
+                  return b.pool - a.pool;
+                });
+
+                const topReps = sortedReps.slice(0, 3);
+
+                return (
+                  <>
+                    {/* Top 3 Podium Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                      {topReps.map((r, idx) => {
+                        const isGold = idx === 0;
+                        const isSilver = idx === 1;
+                        return (
+                          <div 
+                            key={r.name} 
+                            onClick={() => setSearchQuery(r.name === 'Unassigned' ? '' : r.name)}
+                            className={`border p-5 rounded-2xl relative transition hover:shadow-md cursor-pointer ${
+                              isGold 
+                                ? 'bg-gradient-to-br from-amber-50/80 via-orange-50/40 to-white border-amber-300 ring-2 ring-amber-200/60' 
+                                : isSilver 
+                                ? 'bg-gradient-to-br from-slate-50 via-slate-100/40 to-white border-slate-300' 
+                                : 'bg-gradient-to-br from-orange-50/40 to-white border-amber-200'
+                            }`}
+                          >
+                            <span className={`absolute top-3.5 right-4 text-3xl font-black ${
+                              isGold ? 'text-amber-300' : isSilver ? 'text-slate-300' : 'text-amber-200'
+                            }`}>
+                              #{idx + 1}
+                            </span>
+                            
+                            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                              {isGold ? '🥇 Top Attained Leader' : isSilver ? '🥈 Second Pacing' : '🥉 Third Pacing'}
+                            </div>
+                            <div className="text-lg font-black text-slate-900 mt-1">{r.name}</div>
+                            
+                            {/* Layer 1: Attained */}
+                            <div className="mt-3 bg-white/90 p-2.5 rounded-xl border border-slate-200 shadow-2xs">
+                              <span className="text-[10px] font-bold text-slate-500 uppercase">Layer 1: Pipeline Attained</span>
+                              <div className="text-2xl font-black text-emerald-700 mt-0.5">
+                                ${r.attained.toLocaleString()}
+                              </div>
+                            </div>
+
+                            {/* Layer 2: Commit / Likely Path */}
+                            <div className="mt-2.5 bg-slate-50/90 p-2.5 rounded-xl border border-slate-200 text-xs space-y-1">
+                              <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase">
+                                <span>Layer 2: Commit / Likely Path</span>
+                                <span className="text-indigo-600 font-bold">${r.path.toLocaleString()}</span>
+                              </div>
+                              <div className="flex justify-between text-[11px] text-slate-600">
+                                <span>Commit: <strong className="text-emerald-700">${r.commit.toLocaleString()}</strong></span>
+                                <span>Likely: <strong className="text-indigo-700">${r.likely.toLocaleString()}</strong></span>
+                              </div>
+                              <div className="flex justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-200/60">
+                                <span>Total Pool: ${(r.pool / 1000).toFixed(0)}k</span>
+                                <span>{r.count} Opportunities</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Full Standings Table */}
+                    <div className="border border-slate-200 rounded-2xl overflow-hidden mb-6">
+                      <div className="bg-slate-50/80 px-4 py-3 border-b border-slate-200 flex justify-between items-center">
+                        <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Rep Standings & Conversion Ratios</span>
+                        <span className="text-xs text-slate-500">{sortedReps.length} Active Account Executives</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-slate-50/40 border-b border-slate-200 text-slate-500 font-semibold">
+                              <th className="py-2.5 px-4 w-12 text-center">Rank</th>
+                              <th className="py-2.5 px-4">Account Executive</th>
+                              <th className="py-2.5 px-4 text-right font-bold text-emerald-800">Layer 1: Attained</th>
+                              <th className="py-2.5 px-4 text-right text-emerald-700">Commit</th>
+                              <th className="py-2.5 px-4 text-right text-indigo-600">Likely</th>
+                              <th className="py-2.5 px-4 text-right font-bold text-slate-900">Path (Commit + 50% Likely)</th>
+                              <th className="py-2.5 px-4 text-right">Total Working Pool</th>
+                              <th className="py-2.5 px-4 text-center">Deals</th>
+                              <th className="py-2.5 px-4 text-center">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {sortedReps.map((r, i) => (
+                              <tr key={r.name} className="hover:bg-slate-50/80 transition">
+                                <td className="py-3 px-4 text-center font-black text-slate-400">#{i + 1}</td>
+                                <td className="py-3 px-4 font-bold text-slate-900">
+                                  {r.name}
+                                </td>
+                                <td className="py-3 px-4 text-right font-black text-emerald-600">
+                                  ${r.attained.toLocaleString()}
+                                </td>
+                                <td className="py-3 px-4 text-right font-semibold text-emerald-700">
+                                  ${r.commit.toLocaleString()}
+                                </td>
+                                <td className="py-3 px-4 text-right font-semibold text-indigo-600">
+                                  ${r.likely.toLocaleString()}
+                                </td>
+                                <td className="py-3 px-4 text-right font-extrabold text-[#1B0B3B]">
+                                  ${r.path.toLocaleString()}
+                                </td>
+                                <td className="py-3 px-4 text-right text-slate-700 font-medium">
+                                  ${r.pool.toLocaleString()}
+                                </td>
+                                <td className="py-3 px-4 text-center text-slate-500">
+                                  {r.count}
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  <button
+                                    onClick={() => setSearchQuery(r.name === 'Unassigned' ? '' : r.name)}
+                                    className="text-indigo-600 hover:text-indigo-900 font-semibold px-2 py-1 rounded bg-indigo-50 hover:bg-indigo-100 transition text-[11px]"
+                                  >
+                                    View Deals
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Opportunities Below Leaderboard */}
+                    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+                      <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-3">
+                        <div>
+                          <h3 className="font-bold text-slate-900 text-sm">
+                            Rep Opportunities Breakdown {searchQuery ? `(Filtered: "${searchQuery}")` : ''}
+                          </h3>
+                          <p className="text-[11px] text-slate-500">
+                            Showing deals belonging to the active leaderboard selection. Use search or click "View Deals" on any rep.
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 w-full md:w-auto">
+                          {searchQuery && (
+                            <button
+                              onClick={() => setSearchQuery('')}
+                              className="text-xs text-rose-600 hover:underline flex items-center gap-1 font-medium mr-1"
+                            >
+                              <X className="w-3.5 h-3.5" /> Clear Filter
+                            </button>
+                          )}
+                          <div className="relative flex-1 md:w-64">
+                            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                            <input
+                              type="text"
+                              placeholder="Filter by Rep or Account..."
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                              className="w-full text-xs pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-slate-50/75 border-b border-slate-200 text-slate-500 font-semibold">
+                              <th className="py-3 px-4">Opportunity Name</th>
+                              <th className="py-3 px-3">AE</th>
+                              <th className="py-3 px-3">Team</th>
+                              <th className="py-3 px-3">Motion</th>
+                              <th className="py-3 px-3 text-right">ACV</th>
+                              <th className="py-3 px-3">Likelihood to Pipe</th>
+                              <th className="py-3 px-3">Agency Partners</th>
+                              <th className="py-3 px-3">Close Date</th>
+                              <th className="py-3 px-4 text-center">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {filteredDeals.map((d) => (
+                              <tr key={d.id} className="hover:bg-slate-50/80 transition">
+                                <td className="py-3 px-4 font-medium text-slate-900">
+                                  <a 
+                                    href={`https://braze.lightning.force.com/lightning/r/Opportunity/${d.id}/view`}
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1"
+                                  >
+                                    {d.name}
+                                    <ExternalLink className="w-3 h-3 text-slate-400" />
+                                  </a>
+                                </td>
+                                <td className="py-3 px-3 font-semibold text-slate-800">{d.ae}</td>
+                                <td className="py-3 px-3 text-slate-600">{d.team}</td>
+                                <td className="py-3 px-3">
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                    d.motion === 'Inbound' ? 'bg-sky-50 text-sky-700 border border-sky-200' : 'bg-purple-50 text-purple-700 border border-purple-200'
+                                  }`}>
+                                    {d.motion}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-3 text-right font-bold text-slate-900">${d.acv.toLocaleString()}</td>
+                                <td className="py-3 px-3">
+                                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium ${
+                                    d.commitStatus === 'Commit' ? 'bg-emerald-100 text-emerald-800' :
+                                    d.commitStatus === 'Likely' ? 'bg-indigo-100 text-indigo-800' :
+                                    d.commitStatus === 'Attained' ? 'bg-teal-100 text-teal-800 font-bold' :
+                                    'bg-slate-100 text-slate-600'
+                                  }`}>
+                                    {d.commitStatus}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-3 text-slate-600 max-w-[180px] truncate" title={d.agencyPartners || d.partners}>
+                                  {d.agencyPartners || d.partners || <span className="text-slate-300">—</span>}
+                                </td>
+                                <td className="py-3 px-3 text-slate-500">{d.closeDate}</td>
+                                <td className="py-3 px-4 text-center">
+                                  <button 
+                                    onClick={() => {
+                                      setEditingDeal(d);
+                                      setEditAcv(d.acv.toString());
+                                      setEditCommit(d.commitStatus);
+                                    }}
+                                    className="text-xs text-indigo-600 hover:text-indigo-900 font-semibold px-2 py-1 rounded bg-indigo-50 hover:bg-indigo-100 transition flex items-center gap-1 mx-auto"
+                                  >
+                                    <Edit3 className="w-3 h-3" /> Update
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -972,9 +1331,9 @@ export default function App() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                    <ShieldCheck className="w-5 h-5 text-indigo-600" /> Partner Ecosystem Leaderboard
+                    <ShieldCheck className="w-5 h-5 text-indigo-600" /> Partner Ecosystem Leaderboard {teamFilter !== 'ALL' ? `(${teamFilter})` : ''}
                   </h2>
-                  <p className="text-xs text-slate-500">Tracking tech partners mentioned, attached, and influenced across pipeline</p>
+                  <p className="text-xs text-slate-500">Tracking tech and agency partners tagged across pipeline</p>
                 </div>
                 <div className="flex gap-4 text-xs font-semibold">
                   <div className="bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-lg text-indigo-900">
@@ -990,7 +1349,7 @@ export default function App() {
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold">
-                      <th className="py-3 px-4">Partner Technology</th>
+                      <th className="py-3 px-4">Partner Technology / Agency</th>
                       <th className="py-3 px-4 text-center">Opportunities Tagged</th>
                       <th className="py-3 px-4 text-center">Attached Deals</th>
                       <th className="py-3 px-4 text-right">Influenced ACV</th>
@@ -1031,7 +1390,7 @@ export default function App() {
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-2">
                 <div>
                   <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                    <Compass className="w-5 h-5 text-[#FF595A]" /> Focus Pipeline Priorities (0–180 Days)
+                    <Compass className="w-5 h-5 text-[#FF595A]" /> Focus Pipeline Priorities (0–180 Days) {teamFilter !== 'ALL' ? `(${teamFilter})` : ''}
                   </h2>
                   <p className="text-xs text-slate-500 mt-0.5">
                     Immediate execution runway segmented into 0–90 day targets vs 91–180 day mid-term targets.
@@ -1065,7 +1424,7 @@ export default function App() {
 
                         <div className="space-y-2.5">
                           {t1Deals.length === 0 ? (
-                            <div className="text-xs text-slate-400 p-4 text-center border border-dashed rounded-xl">No Tier 1 deals found.</div>
+                            <div className="text-xs text-slate-400 p-4 text-center border border-dashed rounded-xl">No Tier 1 deals found for this selection.</div>
                           ) : (
                             t1Deals.map(d => (
                               <div key={d.id} className="bg-white p-3.5 rounded-xl border border-slate-200 hover:border-rose-300 transition shadow-xs flex flex-col justify-between gap-2">
@@ -1128,7 +1487,7 @@ export default function App() {
 
                         <div className="space-y-2.5">
                           {t2Deals.length === 0 ? (
-                            <div className="text-xs text-slate-400 p-4 text-center border border-dashed rounded-xl">No Tier 2 deals found.</div>
+                            <div className="text-xs text-slate-400 p-4 text-center border border-dashed rounded-xl">No Tier 2 deals found for this selection.</div>
                           ) : (
                             t2Deals.map(d => (
                               <div key={d.id} className="bg-white p-3.5 rounded-xl border border-slate-200 hover:border-amber-300 transition shadow-xs flex flex-col justify-between gap-2">
