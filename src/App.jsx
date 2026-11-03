@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   TrendingUp, TrendingDown, Target, ExternalLink, BarChart3, Filter, Award, Search, 
-  RefreshCw, CheckCircle2, AlertCircle, Layers, X, Sparkles, Compass, Share2, Users, ChevronRight
+  RefreshCw, CheckCircle2, AlertCircle, Layers, X, Sparkles, Compass, Share2, Users, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSChLkaPJrSjfFtM1vTWbkl2uffjadl-oV5qCdkTIIqsE7kVU_3eh3Vp4suNJfjUltlcT1t00Pi9KIP/pub?gid=2048510077&single=true&output=csv";
@@ -349,8 +349,8 @@ export default function App() {
   // Interactive Rep Filter for Leaderboard
   const [selectedRep, setSelectedRep] = useState('ALL');
 
-  // Interactive Partner Filter for Partner Ecosystem Tab
-  const [selectedEcosystemPartner, setSelectedEcosystemPartner] = useState('ALL');
+  // Interactive Partner Filter for Partner Ecosystem Tab (expands inline directly under the partner row)
+  const [selectedEcosystemPartner, setSelectedEcosystemPartner] = useState(null);
 
   // Crossbeam Overlaps Tab filters
   const [crossbeamPartnerFilter, setCrossbeamPartnerFilter] = useState('ALL');
@@ -362,7 +362,6 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(true);
   const [lastUpdated, setLastUpdated] = useState('Loading...');
 
-  // Australian Date Parser (DD/MM/YYYY)
   const getDaysUntilClose = (dateStr) => {
     if (!dateStr || typeof dateStr !== 'string') return 999;
     const clean = dateStr.trim();
@@ -463,6 +462,7 @@ export default function App() {
         
         const attachedCol = getIdx(['partner attached', 'attached']);
         const sourcedCol = getIdx(['partner sourced', 'sourced']);
+        const sourcePartnerCol = getIdx(['source partner', 'source p']);
         const commitCol = getIdx(['liklihood', 'likelihood', 'stage 1 commit', 'commit']);
         const dateCol = getIdx(['close date']);
         const motionCol = getIdx(['inbound/outbound', 'motion']);
@@ -496,6 +496,9 @@ export default function App() {
                             sourcedVal.toLowerCase().includes('sourced') || 
                             sourcedVal.toLowerCase() === '1';
 
+          // Specific Source Partner technology/agency name
+          const sourcePartnerName = sourcePartnerCol !== -1 ? String(cols[sourcePartnerCol] || '').trim() : '';
+
           let rawCommit = cols[commitCol !== -1 ? commitCol : 18] || 'Non Commit';
           if (!rawCommit || rawCommit.trim() === '') rawCommit = 'Non Commit';
 
@@ -507,13 +510,12 @@ export default function App() {
             acv: cleanAcv,
             ae: cols[aeCol !== -1 ? aeCol : 5] || 'Unassigned',
             bdr: cols[bdrCol !== -1 ? bdrCol : 6] || '',
-            // Column H: Partner (s)
             partners: cols[partnersCol !== -1 ? partnersCol : 7] || '',
-            // Column Y: Crossbeam Partners
             crossbeamPartners: cols[crossbeamCol !== -1 ? crossbeamCol : 24] || '',
             partnerAttached: isAttached,
             partnerSourcedDetail: sourcedVal,
             isPartnerSourced: isSourced,
+            sourcePartner: sourcePartnerName,
             commitStatus: rawCommit,
             closeDate: cols[dateCol !== -1 ? dateCol : 20] || '',
             motion: cols[motionCol !== -1 ? motionCol : 22] || 'Outbound',
@@ -661,9 +663,9 @@ export default function App() {
               count: 0, 
               acv: 0, 
               attachedCount: 0, 
-              attachedAcv: 0,
+              attachedAcv: 0, 
               sourcedCount: 0, 
-              sourcedAcv: 0,
+              sourcedAcv: 0, 
               deals: [] 
             };
           }
@@ -675,7 +677,10 @@ export default function App() {
             counts[p].attachedCount += 1;
             counts[p].attachedAcv += d.acv;
           }
-          if (d.isPartnerSourced) {
+          
+          // Check if this deal was sourced by this specific partner
+          const isDirectSource = d.sourcePartner && d.sourcePartner.toLowerCase().includes(p.toLowerCase());
+          if (d.isPartnerSourced || isDirectSource) {
             counts[p].sourcedCount += 1;
             counts[p].sourcedAcv += d.acv;
           }
@@ -722,6 +727,7 @@ export default function App() {
             commitStatus: d.commitStatus,
             attached: d.partnerAttached,
             sourced: d.partnerSourcedDetail,
+            sourcePartner: d.sourcePartner,
             motion: d.motion,
             closeDate: d.closeDate
           });
@@ -821,10 +827,11 @@ export default function App() {
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto mt-4 flex items-center gap-2 border-t border-indigo-900/60 pt-3">
+        {/* SWAPPED TAB ORDER: Partner Ecosystem before Crossbeam Overlaps */}
+        <div className="max-w-7xl mx-auto mt-4 flex items-center gap-2 border-t border-indigo-900/60 pt-3 overflow-x-auto">
           <button 
             onClick={() => setActiveTab('overview')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition whitespace-nowrap ${
               activeTab === 'overview' ? 'bg-[#FF595A] text-white shadow-sm' : 'text-indigo-200 hover:bg-white/10'
             }`}
           >
@@ -832,31 +839,31 @@ export default function App() {
           </button>
           <button 
             onClick={() => setActiveTab('leaderboard')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition whitespace-nowrap ${
               activeTab === 'leaderboard' ? 'bg-[#FF595A] text-white shadow-sm' : 'text-indigo-200 hover:bg-white/10'
             }`}
           >
             <Award className="w-3.5 h-3.5" /> Rep Pipeline Leaderboard
           </button>
           <button 
-            onClick={() => setActiveTab('crossbeam')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
-              activeTab === 'crossbeam' ? 'bg-[#FF595A] text-white shadow-sm' : 'text-indigo-200 hover:bg-white/10'
-            }`}
-          >
-            <Share2 className="w-3.5 h-3.5" /> Crossbeam Overlaps
-          </button>
-          <button 
             onClick={() => setActiveTab('partners')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition whitespace-nowrap ${
               activeTab === 'partners' ? 'bg-[#FF595A] text-white shadow-sm' : 'text-indigo-200 hover:bg-white/10'
             }`}
           >
             <Users className="w-3.5 h-3.5" /> Partner Ecosystem
           </button>
           <button 
+            onClick={() => setActiveTab('crossbeam')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition whitespace-nowrap ${
+              activeTab === 'crossbeam' ? 'bg-[#FF595A] text-white shadow-sm' : 'text-indigo-200 hover:bg-white/10'
+            }`}
+          >
+            <Share2 className="w-3.5 h-3.5" /> Crossbeam Overlaps
+          </button>
+          <button 
             onClick={() => setActiveTab('focus')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition whitespace-nowrap ${
               activeTab === 'focus' ? 'bg-[#FF595A] text-white shadow-sm' : 'text-indigo-200 hover:bg-white/10'
             }`}
           >
@@ -875,7 +882,6 @@ export default function App() {
               activeTeamFilter={teamFilter}
             />
 
-            {/* Global Filters */}
             <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
               <div className="flex items-center gap-2 w-full md:w-auto">
                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
@@ -914,7 +920,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Top 4 Summary Widgets */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
                 <div>
@@ -944,7 +949,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Commit / Likely Path WITH Gap to Path First, then Total Working Pool */}
               <div className="bg-white p-5 rounded-2xl border-2 border-indigo-200 shadow-sm flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between text-slate-500 text-xs font-semibold mb-1">
@@ -987,7 +991,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Speedometers */}
             {teamFilter === 'ALL' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                 <TeamSpeedometer
@@ -1021,7 +1024,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Opportunities Table */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
@@ -1420,6 +1422,222 @@ export default function App() {
           </div>
         )}
 
+        {/* TAB: PARTNER ECOSYSTEM (STRICTLY COLUMN H: PARTNER (S)) WITH INLINE DRILLDOWN UNDER THE ACTIVE PARTNER */}
+        {activeTab === 'partners' && (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <Users className="w-5 h-5 text-indigo-600" /> Partner Ecosystem Leaderboard {teamFilter !== 'ALL' ? `(${teamFilter})` : ''}
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Aggregated strictly from the <strong>Partner (s)</strong> column. Click <strong>View Deals</strong> to expand deal-level insights directly under that partner.
+                  </p>
+                </div>
+                
+                {/* ATTACHED & SOURCED METRICS BANNER */}
+                <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                  <div className="bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-lg text-indigo-900">
+                    Attached Rate: <span className="font-bold text-[#FF595A]">{metrics.attachRate}%</span> ({metrics.partnerAttachedCount} deals · ${(metrics.partnerAttachedAcv / 1000).toFixed(0)}k)
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg text-emerald-900">
+                    Sourced Rate: <span className="font-bold text-emerald-700">{metrics.sourcedRate}%</span> ({metrics.partnerSourcedCount} deals · ${(metrics.partnerSourcedAcv / 1000).toFixed(0)}k)
+                  </div>
+                </div>
+              </div>
+
+              {/* ACTIVE FILTER BADGE */}
+              {selectedEcosystemPartner && (
+                <div className="flex items-center gap-2 bg-indigo-50/70 p-2.5 rounded-xl border border-indigo-200 mb-4">
+                  <span className="text-xs font-bold text-indigo-950">
+                    Currently investigating: <strong className="text-indigo-600">{selectedEcosystemPartner}</strong>
+                  </span>
+                  <button
+                    onClick={() => setSelectedEcosystemPartner(null)}
+                    className="ml-auto text-xs text-indigo-700 hover:text-indigo-900 font-bold flex items-center gap-1 bg-white px-2.5 py-1 rounded-lg border border-indigo-200 transition"
+                  >
+                    <X className="w-3.5 h-3.5 text-indigo-600" /> Collapse Drawer
+                  </button>
+                </div>
+              )}
+
+              {/* TABLE WITH INLINE EXPANSION UNDER EACH PARTNER ROW */}
+              <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold">
+                      <th className="py-3 px-4">Partner Technology / Agency</th>
+                      <th className="py-3 px-4 text-center">Tagged Deals</th>
+                      <th className="py-3 px-4 text-center">Attached Deals</th>
+                      <th className="py-3 px-4 text-center">Sourced Deals</th>
+                      <th className="py-3 px-4 text-right">Total Pipeline ACV</th>
+                      <th className="py-3 px-4 text-center">Investigate</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {partnerData.length === 0 ? (
+                      <tr>
+                        <td colSpan="6" className="text-center py-8 text-slate-400 text-xs">
+                          No partners found in Column H for the active team selection.
+                        </td>
+                      </tr>
+                    ) : (
+                      partnerData.slice(0, 25).map((p, idx) => {
+                        const isExpanded = selectedEcosystemPartner === p.name;
+
+                        return (
+                          <React.Fragment key={p.name}>
+                            <tr 
+                              className={`transition cursor-pointer ${isExpanded ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50/80'}`}
+                              onClick={() => setSelectedEcosystemPartner(isExpanded ? null : p.name)}
+                            >
+                              <td className="py-3 px-4 font-bold text-slate-900 flex items-center gap-2">
+                                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                                  isExpanded ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-700'
+                                }`}>
+                                  {idx + 1}
+                                </span>
+                                {p.name}
+                              </td>
+                              <td className="py-3 px-4 text-center font-medium text-slate-700">{p.count}</td>
+                              <td className="py-3 px-4 text-center font-bold text-indigo-700">
+                                {p.attachedCount} <span className="text-[10px] font-normal text-slate-400">(${(p.attachedAcv / 1000).toFixed(0)}k)</span>
+                              </td>
+                              <td className="py-3 px-4 text-center font-bold text-emerald-700">
+                                {p.sourcedCount} <span className="text-[10px] font-normal text-slate-400">(${(p.sourcedAcv / 1000).toFixed(0)}k)</span>
+                              </td>
+                              <td className="py-3 px-4 text-right font-extrabold text-slate-900">${p.acv.toLocaleString()}</td>
+                              <td className="py-3 px-4 text-center">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedEcosystemPartner(isExpanded ? null : p.name);
+                                  }}
+                                  className={`px-3 py-1 rounded transition text-[11px] font-semibold flex items-center gap-1 mx-auto ${
+                                    isExpanded
+                                      ? 'bg-indigo-600 text-white shadow-xs'
+                                      : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                                  }`}
+                                >
+                                  {isExpanded ? (
+                                    <><span>Collapse</span> <ChevronUp className="w-3.5 h-3.5" /></>
+                                  ) : (
+                                    <><span>View Deals</span> <ChevronDown className="w-3.5 h-3.5" /></>
+                                  )}
+                                </button>
+                              </td>
+                            </tr>
+
+                            {/* INLINE EXPANDED DRAWER DIRECTLY UNDER THIS PARTNER */}
+                            {isExpanded && (
+                              <tr className="bg-slate-50/90">
+                                <td colSpan="6" className="p-4 border-y-2 border-indigo-200">
+                                  <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 space-y-3">
+                                    <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                                      <div>
+                                        <h4 className="font-bold text-slate-900 text-xs flex items-center gap-2">
+                                          <Sparkles className="w-4 h-4 text-indigo-600" />
+                                          Opportunities tagged with "{p.name}" ({p.deals.length} deals)
+                                        </h4>
+                                        <p className="text-[10.5px] text-slate-500">
+                                          Total pipeline influenced: <strong className="text-slate-800">${p.acv.toLocaleString()}</strong> · Attached: {p.attachedCount} · Sourced: {p.sourcedCount}
+                                        </p>
+                                      </div>
+
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedEcosystemPartner(null);
+                                        }}
+                                        className="text-xs text-slate-400 hover:text-slate-700"
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </button>
+                                    </div>
+
+                                    <div className="overflow-x-auto">
+                                      <table className="w-full text-left border-collapse text-xs">
+                                        <thead>
+                                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold">
+                                            <th className="py-2.5 px-3">Opportunity Name</th>
+                                            <th className="py-2.5 px-3">AE</th>
+                                            <th className="py-2.5 px-3">Team</th>
+                                            <th className="py-2.5 px-3 text-right">ACV</th>
+                                            <th className="py-2.5 px-3 text-center">Attached</th>
+                                            <th className="py-2.5 px-3 text-center">Source Partner Detail</th>
+                                            <th className="py-2.5 px-3">Likelihood to Pipe</th>
+                                            <th className="py-2.5 px-3">Close Date</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                          {p.deals.map((d) => (
+                                            <tr key={d.id} className="hover:bg-slate-50/80 transition">
+                                              <td className="py-2.5 px-3 font-semibold text-slate-900">
+                                                <a 
+                                                  href={`https://braze.lightning.force.com/lightning/r/Opportunity/${d.id}/view`}
+                                                  target="_blank" 
+                                                  rel="noreferrer"
+                                                  className="text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1"
+                                                >
+                                                  {d.name}
+                                                  <ExternalLink className="w-3 h-3 text-slate-400" />
+                                                </a>
+                                              </td>
+                                              <td className="py-2.5 px-3 text-slate-700">{d.ae}</td>
+                                              <td className="py-2.5 px-3 text-slate-600">{d.team}</td>
+                                              <td className="py-2.5 px-3 text-right font-bold text-slate-900">${d.acv.toLocaleString()}</td>
+                                              <td className="py-2.5 px-3 text-center">
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                                  d.partnerAttached ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-100 text-slate-500'
+                                                }`}>
+                                                  {d.partnerAttached ? 'Yes' : 'No'}
+                                                </span>
+                                              </td>
+                                              <td className="py-2.5 px-3 text-center">
+                                                {d.sourcePartner ? (
+                                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                                    {d.sourcePartner}
+                                                  </span>
+                                                ) : d.isPartnerSourced ? (
+                                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                    {d.partnerSourcedDetail || 'Sourced'}
+                                                  </span>
+                                                ) : (
+                                                  <span className="text-slate-400 text-[10px]">—</span>
+                                                )}
+                                              </td>
+                                              <td className="py-2.5 px-3">
+                                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium ${
+                                                  d.commitStatus === 'Commit' ? 'bg-emerald-100 text-emerald-800' :
+                                                  d.commitStatus === 'Likely' ? 'bg-indigo-100 text-indigo-800' :
+                                                  d.commitStatus === 'Attained' ? 'bg-teal-100 text-teal-800 font-bold' :
+                                                  'bg-slate-100 text-slate-600'
+                                                }`}>
+                                                  {d.commitStatus}
+                                                </span>
+                                              </td>
+                                              <td className="py-2.5 px-3 text-slate-500">{d.closeDate}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* TAB: CROSSBEAM OVERLAPS (STRICTLY COLUMN Y) */}
         {activeTab === 'crossbeam' && (
           <div className="space-y-6">
@@ -1570,208 +1788,7 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB: PARTNER ECOSYSTEM (STRICTLY COLUMN H: PARTNER (S)) WITH ATTACHED + SOURCED DETAILS & DRILLDOWN */}
-        {activeTab === 'partners' && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                    <Users className="w-5 h-5 text-indigo-600" /> Partner Ecosystem Leaderboard {teamFilter !== 'ALL' ? `(${teamFilter})` : ''}
-                  </h2>
-                  <p className="text-xs text-slate-500">
-                    Aggregated strictly from the <strong>Partner (s)</strong> column (Agency & Tech Partners). Click any partner to drill into their deals.
-                  </p>
-                </div>
-                
-                {/* ATTACHED & SOURCED METRICS BANNER */}
-                <div className="flex flex-wrap gap-2 text-xs font-semibold">
-                  <div className="bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-lg text-indigo-900">
-                    Attached Rate: <span className="font-bold text-[#FF595A]">{metrics.attachRate}%</span> ({metrics.partnerAttachedCount} deals · ${(metrics.partnerAttachedAcv / 1000).toFixed(0)}k)
-                  </div>
-                  <div className="bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg text-emerald-900">
-                    Sourced Rate: <span className="font-bold text-emerald-700">{metrics.sourcedRate}%</span> ({metrics.partnerSourcedCount} deals · ${(metrics.partnerSourcedAcv / 1000).toFixed(0)}k)
-                  </div>
-                </div>
-              </div>
-
-              {/* ACTIVE PARTNER FILTER BADGE */}
-              {selectedEcosystemPartner !== 'ALL' && (
-                <div className="flex items-center gap-2 bg-indigo-50/70 p-2.5 rounded-xl border border-indigo-200 mb-4">
-                  <span className="text-xs font-bold text-indigo-950">
-                    Filtering to Partner: <strong className="text-indigo-600">{selectedEcosystemPartner}</strong>
-                  </span>
-                  <button
-                    onClick={() => setSelectedEcosystemPartner('ALL')}
-                    className="ml-auto text-xs text-indigo-700 hover:text-indigo-900 font-bold flex items-center gap-1 bg-white px-2.5 py-1 rounded-lg border border-indigo-200 transition"
-                  >
-                    <X className="w-3.5 h-3.5 text-indigo-600" /> Show All Partners
-                  </button>
-                </div>
-              )}
-
-              {/* PARTNER LEADERBOARD TABLE */}
-              <div className="overflow-x-auto border border-slate-200 rounded-2xl mb-6">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold">
-                      <th className="py-3 px-4">Partner Technology / Agency</th>
-                      <th className="py-3 px-4 text-center">Tagged Deals</th>
-                      <th className="py-3 px-4 text-center">Attached Deals</th>
-                      <th className="py-3 px-4 text-center">Sourced Deals</th>
-                      <th className="py-3 px-4 text-right">Total Pipeline ACV</th>
-                      <th className="py-3 px-4 text-center">Drilldown</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {partnerData.length === 0 ? (
-                      <tr>
-                        <td colSpan="6" className="text-center py-8 text-slate-400 text-xs">
-                          No partners found in Column H for the active team selection.
-                        </td>
-                      </tr>
-                    ) : (
-                      partnerData.slice(0, 20).map((p, idx) => (
-                        <tr 
-                          key={p.name} 
-                          className={`hover:bg-slate-50/80 transition ${selectedEcosystemPartner === p.name ? 'bg-indigo-50/50' : ''}`}
-                        >
-                          <td className="py-3 px-4 font-bold text-slate-900 flex items-center gap-2">
-                            <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-[10px]">
-                              {idx + 1}
-                            </span>
-                            {p.name}
-                          </td>
-                          <td className="py-3 px-4 text-center font-medium text-slate-700">{p.count}</td>
-                          <td className="py-3 px-4 text-center font-bold text-indigo-700">
-                            {p.attachedCount} <span className="text-[10px] font-normal text-slate-400">(${(p.attachedAcv / 1000).toFixed(0)}k)</span>
-                          </td>
-                          <td className="py-3 px-4 text-center font-bold text-emerald-700">
-                            {p.sourcedCount} <span className="text-[10px] font-normal text-slate-400">(${(p.sourcedAcv / 1000).toFixed(0)}k)</span>
-                          </td>
-                          <td className="py-3 px-4 text-right font-extrabold text-slate-900">${p.acv.toLocaleString()}</td>
-                          <td className="py-3 px-4 text-center">
-                            <button
-                              onClick={() => setSelectedEcosystemPartner(selectedEcosystemPartner === p.name ? 'ALL' : p.name)}
-                              className={`px-2.5 py-1 rounded transition text-[11px] font-semibold ${
-                                selectedEcosystemPartner === p.name
-                                  ? 'bg-indigo-600 text-white'
-                                  : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
-                              }`}
-                            >
-                              {selectedEcosystemPartner === p.name ? 'Clear' : 'View Deals'}
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* DRILLDOWN TABLE: OPPORTUNITIES UNDER SELECTED PARTNER */}
-              {(() => {
-                const dealsToDisplay = selectedEcosystemPartner === 'ALL'
-                  ? []
-                  : (partnerData.find(p => p.name === selectedEcosystemPartner)?.deals || []);
-
-                if (selectedEcosystemPartner === 'ALL') {
-                  return (
-                    <div className="bg-slate-50/70 border border-slate-200 border-dashed rounded-xl p-6 text-center text-xs text-slate-500">
-                      💡 Click <strong>"View Deals"</strong> on any partner row above to inspect the specific opportunities, attached statuses, and sourced details tagged to that partner.
-                    </div>
-                  );
-                }
-
-                return (
-                  <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
-                    <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-3">
-                      <div>
-                        <h3 className="font-bold text-slate-900 text-sm">
-                          Opportunities Tagged with "{selectedEcosystemPartner}"
-                        </h3>
-                        <p className="text-[11px] text-slate-500">
-                          {dealsToDisplay.length} opportunities · Total Influenced: ${dealsToDisplay.reduce((s, d) => s + d.acv, 0).toLocaleString()}
-                        </p>
-                      </div>
-
-                      <button
-                        onClick={() => setSelectedEcosystemPartner('ALL')}
-                        className="text-xs text-rose-600 hover:underline flex items-center gap-1 font-semibold"
-                      >
-                        <X className="w-3.5 h-3.5" /> Close Drilldown
-                      </button>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse text-xs">
-                        <thead>
-                          <tr className="bg-slate-50/75 border-b border-slate-200 text-slate-500 font-semibold">
-                            <th className="py-3 px-4">Opportunity Name</th>
-                            <th className="py-3 px-3">AE</th>
-                            <th className="py-3 px-3">Team</th>
-                            <th className="py-3 px-3 text-right">ACV</th>
-                            <th className="py-3 px-3 text-center">Attached</th>
-                            <th className="py-3 px-3 text-center">Sourced Detail</th>
-                            <th className="py-3 px-3">Likelihood to Pipe</th>
-                            <th className="py-3 px-3">Close Date</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {dealsToDisplay.map((d) => (
-                            <tr key={d.id} className="hover:bg-slate-50/80 transition">
-                              <td className="py-3 px-4 font-medium text-slate-900">
-                                <a 
-                                  href={`https://braze.lightning.force.com/lightning/r/Opportunity/${d.id}/view`}
-                                  target="_blank" 
-                                  rel="noreferrer"
-                                  className="text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1"
-                                >
-                                  {d.name}
-                                  <ExternalLink className="w-3 h-3 text-slate-400" />
-                                </a>
-                              </td>
-                              <td className="py-3 px-3 font-semibold text-slate-800">{d.ae}</td>
-                              <td className="py-3 px-3 text-slate-600">{d.team}</td>
-                              <td className="py-3 px-3 text-right font-bold text-slate-900">${d.acv.toLocaleString()}</td>
-                              <td className="py-3 px-3 text-center">
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                  d.partnerAttached ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-100 text-slate-500'
-                                }`}>
-                                  {d.partnerAttached ? 'Yes' : 'No'}
-                                </span>
-                              </td>
-                              <td className="py-3 px-3 text-center">
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                  d.isPartnerSourced ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
-                                }`}>
-                                  {d.partnerSourcedDetail || 'None'}
-                                </span>
-                              </td>
-                              <td className="py-3 px-3">
-                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium ${
-                                  d.commitStatus === 'Commit' ? 'bg-emerald-100 text-emerald-800' :
-                                  d.commitStatus === 'Likely' ? 'bg-indigo-100 text-indigo-800' :
-                                  d.commitStatus === 'Attained' ? 'bg-teal-100 text-teal-800 font-bold' :
-                                  'bg-slate-100 text-slate-600'
-                                }`}>
-                                  {d.commitStatus}
-                                </span>
-                              </td>
-                              <td className="py-3 px-3 text-slate-500">{d.closeDate}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-        )}
-
-        {/* TAB: FOCUS OPPORTUNITIES (0-90 & 91-180 DAYS) */}
+        {/* TAB: FOCUS OPPORTUNITIES */}
         {activeTab === 'focus' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
