@@ -263,6 +263,12 @@ function TeamSpeedometer({ title, target, deals }) {
             strokeLinecap="round"
           />
           <path
+            d={`M ${cx + radius * Math.cos(Math.PI * (1 - 0.45))} ${cy - radius * Math.sin(Math.PI * (1 - 0.45))}`}
+            fill="none"
+            stroke="#BD322B"
+            strokeWidth={strokeWidth}
+          />
+          <path
             d={`M ${cx + radius * Math.cos(Math.PI * (1 - 0.45))} ${cy - radius * Math.sin(Math.PI * (1 - 0.45))} A ${radius} ${radius} 0 0 1 ${cx + radius * Math.cos(Math.PI * (1 - 0.80))} ${cy - radius * Math.sin(Math.PI * (1 - 0.80))}`}
             fill="none"
             stroke="#F2A03F"
@@ -346,10 +352,10 @@ export default function App() {
   const [teamFilter, setTeamFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Interactive Rep Filter for Leaderboard
-  const [selectedRep, setSelectedRep] = useState('ALL');
+  // Interactive Rep Filter (expands inline drawer directly under the rep in the leaderboard)
+  const [selectedRep, setSelectedRep] = useState(null);
 
-  // Interactive Partner Filter for Partner Ecosystem Tab (expands inline directly under the partner row)
+  // Interactive Partner Filter (expands inline drawer directly under the partner in the ecosystem tab)
   const [selectedEcosystemPartner, setSelectedEcosystemPartner] = useState(null);
 
   // Crossbeam Overlaps Tab filters
@@ -496,7 +502,6 @@ export default function App() {
                             sourcedVal.toLowerCase().includes('sourced') || 
                             sourcedVal.toLowerCase() === '1';
 
-          // Specific Source Partner technology/agency name
           const sourcePartnerName = sourcePartnerCol !== -1 ? String(cols[sourcePartnerCol] || '').trim() : '';
 
           let rawCommit = cols[commitCol !== -1 ? commitCol : 18] || 'Non Commit';
@@ -678,7 +683,6 @@ export default function App() {
             counts[p].attachedAcv += d.acv;
           }
           
-          // Check if this deal was sourced by this specific partner
           const isDirectSource = d.sourcePartner && d.sourcePartner.toLowerCase().includes(p.toLowerCase());
           if (d.isPartnerSourced || isDirectSource) {
             counts[p].sourcedCount += 1;
@@ -1108,7 +1112,7 @@ export default function App() {
           </div>
         )}
 
-        {/* REP PIPELINE LEADERBOARD TAB */}
+        {/* REP PIPELINE LEADERBOARD TAB (WITH INLINE OPPORTUNITY EXPANSION UNDER REPS) */}
         {activeTab === 'leaderboard' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
@@ -1118,7 +1122,7 @@ export default function App() {
                     <Award className="w-5 h-5 text-amber-500" /> Rep Pipeline Leaderboard {teamFilter !== 'ALL' ? `(${teamFilter})` : ''}
                   </h2>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Ranked primarily by <strong>Pipeline Generated (Attained)</strong>, backed by <strong>Commit / Likely Path</strong> velocity.
+                    Ranked primarily by <strong>Pipeline Generated (Attained)</strong>, backed by <strong>Commit / Likely Path</strong> velocity. Click <strong>Filter Rep</strong> to expand deals directly under any rep.
                   </p>
                 </div>
                 
@@ -1126,20 +1130,20 @@ export default function App() {
                   <span className="text-xs bg-slate-100 text-slate-700 px-3 py-1.5 rounded-lg font-semibold border border-slate-200">
                     Team: {teamFilter}
                   </span>
-                  {selectedRep !== 'ALL' && (
+                  {selectedRep && (
                     <button
-                      onClick={() => setSelectedRep('ALL')}
+                      onClick={() => setSelectedRep(null)}
                       className="text-xs bg-indigo-50 text-indigo-800 px-3 py-1.5 rounded-lg font-bold border border-indigo-200 flex items-center gap-1.5 hover:bg-indigo-100 transition"
                     >
                       <span>Rep: {selectedRep}</span>
                       <X className="w-3.5 h-3.5 text-indigo-600" />
                     </button>
                   )}
-                  {(teamFilter !== 'ALL' || selectedRep !== 'ALL' || searchQuery) && (
+                  {(teamFilter !== 'ALL' || selectedRep || searchQuery) && (
                     <button
                       onClick={() => {
                         setTeamFilter('ALL');
-                        setSelectedRep('ALL');
+                        setSelectedRep(null);
                         setSearchQuery('');
                       }}
                       className="text-xs text-rose-600 hover:underline font-semibold px-2 py-1"
@@ -1190,7 +1194,6 @@ export default function App() {
                 });
 
                 const topReps = sortedReps.slice(0, 3);
-                const dealsForSelectedRep = filteredDeals.filter(d => selectedRep === 'ALL' || d.ae === selectedRep);
 
                 return (
                   <>
@@ -1203,7 +1206,7 @@ export default function App() {
                         return (
                           <div 
                             key={r.name} 
-                            onClick={() => setSelectedRep(selectedRep === r.name ? 'ALL' : r.name)}
+                            onClick={() => setSelectedRep(selectedRep === r.name ? null : r.name)}
                             className={`border p-5 rounded-2xl relative transition hover:shadow-md cursor-pointer ${
                               isSelected
                                 ? 'ring-2 ring-indigo-600 bg-indigo-50/40 border-indigo-400'
@@ -1249,7 +1252,7 @@ export default function App() {
 
                             <div className="mt-3 text-center">
                               <span className="text-[11px] font-bold text-indigo-600">
-                                {isSelected ? '✓ Filtering this rep (Click to unfilter)' : 'Click to filter deals below →'}
+                                {isSelected ? '✓ Showing deals below (Click to collapse)' : 'Click to inspect deals inline below →'}
                               </span>
                             </div>
                           </div>
@@ -1257,6 +1260,7 @@ export default function App() {
                       })}
                     </div>
 
+                    {/* STANDINGS TABLE WITH INLINE ACCORDION DRAWER DIRECTLY UNDER EACH REP */}
                     <div className="border border-slate-200 rounded-2xl overflow-hidden mb-6">
                       <div className="bg-slate-50/80 px-4 py-3 border-b border-slate-200 flex justify-between items-center">
                         <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Rep Standings & Conversion Ratios</span>
@@ -1274,143 +1278,151 @@ export default function App() {
                               <th className="py-2.5 px-4 text-right font-bold text-slate-900">Path (Commit + 50% Likely)</th>
                               <th className="py-2.5 px-4 text-right">Total Working Pool</th>
                               <th className="py-2.5 px-4 text-center">Deals</th>
-                              <th className="py-2.5 px-4 text-center">Filter</th>
+                              <th className="py-2.5 px-4 text-center">Investigate</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                            {sortedReps.map((r, i) => (
-                              <tr 
-                                key={r.name} 
-                                className={`hover:bg-slate-50/80 transition ${selectedRep === r.name ? 'bg-indigo-50/50' : ''}`}
-                              >
-                                <td className="py-3 px-4 text-center font-black text-slate-400">#{i + 1}</td>
-                                <td className="py-3 px-4 font-bold text-slate-900">
-                                  {r.name}
-                                </td>
-                                <td className="py-3 px-4 text-right font-black text-emerald-600">
-                                  ${r.attained.toLocaleString()}
-                                </td>
-                                <td className="py-3 px-4 text-right font-semibold text-emerald-700">
-                                  ${r.commit.toLocaleString()}
-                                </td>
-                                <td className="py-3 px-4 text-right font-semibold text-indigo-600">
-                                  ${r.likely.toLocaleString()}
-                                </td>
-                                <td className="py-3 px-4 text-right font-extrabold text-[#1B0B3B]">
-                                  ${r.path.toLocaleString()}
-                                </td>
-                                <td className="py-3 px-4 text-right text-slate-700 font-medium">
-                                  ${r.pool.toLocaleString()}
-                                </td>
-                                <td className="py-3 px-4 text-center text-slate-500">
-                                  {r.count}
-                                </td>
-                                <td className="py-3 px-4 text-center">
-                                  <button
-                                    onClick={() => setSelectedRep(selectedRep === r.name ? 'ALL' : r.name)}
-                                    className={`px-2.5 py-1 rounded transition text-[11px] font-semibold ${
-                                      selectedRep === r.name
-                                        ? 'bg-indigo-600 text-white'
-                                        : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
-                                    }`}
+                            {sortedReps.map((r, i) => {
+                              const isExpanded = selectedRep === r.name;
+
+                              return (
+                                <React.Fragment key={r.name}>
+                                  <tr 
+                                    className={`transition cursor-pointer ${isExpanded ? 'bg-indigo-50/70 border-l-4 border-indigo-600' : 'hover:bg-slate-50/80'}`}
+                                    onClick={() => setSelectedRep(isExpanded ? null : r.name)}
                                   >
-                                    {selectedRep === r.name ? 'Clear' : 'Filter Rep'}
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
+                                    <td className="py-3 px-4 text-center font-black text-slate-400">#{i + 1}</td>
+                                    <td className="py-3 px-4 font-bold text-slate-900">
+                                      {r.name}
+                                    </td>
+                                    <td className="py-3 px-4 text-right font-black text-emerald-600">
+                                      ${r.attained.toLocaleString()}
+                                    </td>
+                                    <td className="py-3 px-4 text-right font-semibold text-emerald-700">
+                                      ${r.commit.toLocaleString()}
+                                    </td>
+                                    <td className="py-3 px-4 text-right font-semibold text-indigo-600">
+                                      ${r.likely.toLocaleString()}
+                                    </td>
+                                    <td className="py-3 px-4 text-right font-extrabold text-[#1B0B3B]">
+                                      ${r.path.toLocaleString()}
+                                    </td>
+                                    <td className="py-3 px-4 text-right text-slate-700 font-medium">
+                                      ${r.pool.toLocaleString()}
+                                    </td>
+                                    <td className="py-3 px-4 text-center text-slate-500">
+                                      {r.count}
+                                    </td>
+                                    <td className="py-3 px-4 text-center">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedRep(isExpanded ? null : r.name);
+                                        }}
+                                        className={`px-3 py-1 rounded transition text-[11px] font-semibold flex items-center gap-1 mx-auto ${
+                                          isExpanded
+                                            ? 'bg-indigo-600 text-white shadow-xs'
+                                            : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                                        }`}
+                                      >
+                                        {isExpanded ? (
+                                          <><span>Collapse</span> <ChevronUp className="w-3.5 h-3.5" /></>
+                                        ) : (
+                                          <><span>View Deals</span> <ChevronDown className="w-3.5 h-3.5" /></>
+                                        )}
+                                      </button>
+                                    </td>
+                                  </tr>
 
-                    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                      <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-3">
-                        <div>
-                          <h3 className="font-bold text-slate-900 text-sm">
-                            Rep Opportunities Breakdown {selectedRep !== 'ALL' ? `(Rep: "${selectedRep}")` : '(All Reps)'}
-                          </h3>
-                          <p className="text-[11px] text-slate-500">
-                            Showing {dealsForSelectedRep.length} deals. Click any rep above to isolate their deals.
-                          </p>
-                        </div>
+                                  {/* INLINE EXPANDED OPPORTUNITIES DIRECTLY UNDER THIS REP */}
+                                  {isExpanded && (
+                                    <tr className="bg-slate-50/90">
+                                      <td colSpan="9" className="p-4 border-y-2 border-indigo-200">
+                                        <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 space-y-3">
+                                          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                                            <div>
+                                              <h4 className="font-bold text-slate-900 text-xs flex items-center gap-2">
+                                                <Award className="w-4 h-4 text-indigo-600" />
+                                                Active pipeline opportunities for {r.name} ({r.deals.length} deals)
+                                              </h4>
+                                              <p className="text-[10.5px] text-slate-500">
+                                                Attained: <strong className="text-emerald-700">${r.attained.toLocaleString()}</strong> · Commit: ${r.commit.toLocaleString()} · Likely: ${r.likely.toLocaleString()} · Total: ${r.pool.toLocaleString()}
+                                              </p>
+                                            </div>
 
-                        <div className="flex items-center gap-2 w-full md:w-auto">
-                          {selectedRep !== 'ALL' && (
-                            <button
-                              onClick={() => setSelectedRep('ALL')}
-                              className="text-xs text-rose-600 hover:underline flex items-center gap-1 font-semibold mr-1"
-                            >
-                              <X className="w-3.5 h-3.5" /> Show All Reps
-                            </button>
-                          )}
-                          <div className="relative flex-1 md:w-64">
-                            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                            <input
-                              type="text"
-                              placeholder="Search deals..."
-                              value={searchQuery}
-                              onChange={(e) => setSearchQuery(e.target.value)}
-                              className="w-full text-xs pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 focus:outline-none focus:border-indigo-500"
-                            />
-                          </div>
-                        </div>
-                      </div>
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedRep(null);
+                                              }}
+                                              className="text-xs text-slate-400 hover:text-slate-700"
+                                            >
+                                              <X className="w-4 h-4" />
+                                            </button>
+                                          </div>
 
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse text-xs">
-                          <thead>
-                            <tr className="bg-slate-50/75 border-b border-slate-200 text-slate-500 font-semibold">
-                              <th className="py-3 px-4">Opportunity Name</th>
-                              <th className="py-3 px-3">AE</th>
-                              <th className="py-3 px-3">Team</th>
-                              <th className="py-3 px-3">Motion</th>
-                              <th className="py-3 px-3 text-right">ACV</th>
-                              <th className="py-3 px-3">Likelihood to Pipe</th>
-                              <th className="py-3 px-3">Partner (s)</th>
-                              <th className="py-3 px-3">Close Date</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {dealsForSelectedRep.map((d) => (
-                              <tr key={d.id} className="hover:bg-slate-50/80 transition">
-                                <td className="py-3 px-4 font-medium text-slate-900">
-                                  <a 
-                                    href={`https://braze.lightning.force.com/lightning/r/Opportunity/${d.id}/view`}
-                                    target="_blank" 
-                                    rel="noreferrer"
-                                    className="text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1"
-                                  >
-                                    {d.name}
-                                    <ExternalLink className="w-3 h-3 text-slate-400" />
-                                  </a>
-                                </td>
-                                <td className="py-3 px-3 font-semibold text-slate-800">{d.ae}</td>
-                                <td className="py-3 px-3 text-slate-600">{d.team}</td>
-                                <td className="py-3 px-3">
-                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                    d.motion === 'Inbound' ? 'bg-sky-50 text-sky-700 border border-sky-200' : 'bg-purple-50 text-purple-700 border border-purple-200'
-                                  }`}>
-                                    {d.motion}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-3 text-right font-bold text-slate-900">${d.acv.toLocaleString()}</td>
-                                <td className="py-3 px-3">
-                                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium ${
-                                    d.commitStatus === 'Commit' ? 'bg-emerald-100 text-emerald-800' :
-                                    d.commitStatus === 'Likely' ? 'bg-indigo-100 text-indigo-800' :
-                                    d.commitStatus === 'Attained' ? 'bg-teal-100 text-teal-800 font-bold' :
-                                    'bg-slate-100 text-slate-600'
-                                  }`}>
-                                    {d.commitStatus}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-3 text-slate-600 max-w-[180px] truncate" title={d.partners}>
-                                  {d.partners || <span className="text-slate-300">—</span>}
-                                </td>
-                                <td className="py-3 px-3 text-slate-500">{d.closeDate}</td>
-                              </tr>
-                            ))}
+                                          <div className="overflow-x-auto">
+                                            <table className="w-full text-left border-collapse text-xs">
+                                              <thead>
+                                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold">
+                                                  <th className="py-2.5 px-3">Opportunity Name</th>
+                                                  <th className="py-2.5 px-3">Team</th>
+                                                  <th className="py-2.5 px-3">Motion</th>
+                                                  <th className="py-2.5 px-3 text-right">ACV</th>
+                                                  <th className="py-2.5 px-3">Likelihood to Pipe</th>
+                                                  <th className="py-2.5 px-3">Partner (s)</th>
+                                                  <th className="py-2.5 px-3">Close Date</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody className="divide-y divide-slate-100">
+                                                {r.deals.map((d) => (
+                                                  <tr key={d.id} className="hover:bg-slate-50/80 transition">
+                                                    <td className="py-2.5 px-3 font-semibold text-slate-900">
+                                                      <a 
+                                                        href={`https://braze.lightning.force.com/lightning/r/Opportunity/${d.id}/view`}
+                                                        target="_blank" 
+                                                        rel="noreferrer"
+                                                        className="text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1"
+                                                      >
+                                                        {d.name}
+                                                        <ExternalLink className="w-3 h-3 text-slate-400" />
+                                                      </a>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-slate-600">{d.team}</td>
+                                                    <td className="py-2.5 px-3">
+                                                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                                        d.motion === 'Inbound' ? 'bg-sky-50 text-sky-700 border border-sky-200' : 'bg-purple-50 text-purple-700 border border-purple-200'
+                                                      }`}>
+                                                        {d.motion}
+                                                      </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-right font-bold text-slate-900">${d.acv.toLocaleString()}</td>
+                                                    <td className="py-2.5 px-3">
+                                                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium ${
+                                                        d.commitStatus === 'Commit' ? 'bg-emerald-100 text-emerald-800' :
+                                                        d.commitStatus === 'Likely' ? 'bg-indigo-100 text-indigo-800' :
+                                                        d.commitStatus === 'Attained' ? 'bg-teal-100 text-teal-800 font-bold' :
+                                                        'bg-slate-100 text-slate-600'
+                                                      }`}>
+                                                        {d.commitStatus}
+                                                      </span>
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-slate-600 max-w-[200px] truncate" title={d.partners}>
+                                                      {d.partners || <span className="text-slate-300">—</span>}
+                                                    </td>
+                                                    <td className="py-2.5 px-3 text-slate-500">{d.closeDate}</td>
+                                                  </tr>
+                                                ))}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </React.Fragment>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -1422,7 +1434,7 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB: PARTNER ECOSYSTEM (STRICTLY COLUMN H: PARTNER (S)) WITH INLINE DRILLDOWN UNDER THE ACTIVE PARTNER */}
+        {/* TAB: PARTNER ECOSYSTEM (WITH INLINE ACCORDION UNDER EACH PARTNER) */}
         {activeTab === 'partners' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
@@ -1436,7 +1448,6 @@ export default function App() {
                   </p>
                 </div>
                 
-                {/* ATTACHED & SOURCED METRICS BANNER */}
                 <div className="flex flex-wrap gap-2 text-xs font-semibold">
                   <div className="bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-lg text-indigo-900">
                     Attached Rate: <span className="font-bold text-[#FF595A]">{metrics.attachRate}%</span> ({metrics.partnerAttachedCount} deals · ${(metrics.partnerAttachedAcv / 1000).toFixed(0)}k)
@@ -1447,7 +1458,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* ACTIVE FILTER BADGE */}
               {selectedEcosystemPartner && (
                 <div className="flex items-center gap-2 bg-indigo-50/70 p-2.5 rounded-xl border border-indigo-200 mb-4">
                   <span className="text-xs font-bold text-indigo-950">
@@ -1462,7 +1472,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* TABLE WITH INLINE EXPANSION UNDER EACH PARTNER ROW */}
               <div className="overflow-x-auto border border-slate-200 rounded-2xl">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
