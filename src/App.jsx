@@ -143,13 +143,7 @@ function TeamSpeedometer({ title, target, attained, commit, likely, pool, isMast
 
 function PodiumCards({ items, filterKey, metricLabel, subMetricLabel, formatValue, formatSubValue, onSelect }) {
   const top3 = items.slice(0, 3);
-  if (top3.length === 0) {
-    return (
-      <div className="p-4 text-center text-xs text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-        No records with positive {metricLabel} for the active filter selection.
-      </div>
-    );
-  }
+  if (top3.length === 0) return null;
 
   const styles = [
     {
@@ -469,7 +463,6 @@ export default function App() {
 
   useEffect(() => { fetchLiveData(); }, []);
 
-  // Reset expanded selections whenever filters change so podium/table remain in sync
   useEffect(() => {
     setSelectedRep(null);
   }, [teamFilter, sourceFilter, leaderboardSortBy, searchQuery]);
@@ -546,7 +539,8 @@ export default function App() {
     });
   }, [deals, searchQuery, teamFilter, sourceFilter]);
 
-  // Leaderboard sorted dynamically by Team, Source, Search, and Rank By (Attained vs Commit)
+  // Entire leaderboard (Podium + Table) dynamically filters & ranks by the active filter & metric
+  // If a filter (e.g. ANZ AM on Commit) has 0 reps with > $0 in that metric, returns [] (blank)
   const leaderboardData = useMemo(() => {
     const repMap = {};
     filteredDeals.forEach(d => {
@@ -562,18 +556,15 @@ export default function App() {
       else if (status === 'likely') repMap[rep].likely += acv;
     });
 
-    return Object.values(repMap).sort((a, b) => {
-      if (leaderboardSortBy === 'commit') {
-        return b.commit - a.commit || b.attained - a.attained || b.pool - a.pool;
-      }
-      return b.attained - a.attained || b.commit - a.commit || b.pool - a.pool;
-    });
+    return Object.values(repMap)
+      .filter(r => (leaderboardSortBy === 'commit' ? r.commit > 0 : r.attained > 0))
+      .sort((a, b) => {
+        if (leaderboardSortBy === 'commit') {
+          return b.commit - a.commit || b.attained - a.attained;
+        }
+        return b.attained - a.attained || b.commit - a.commit;
+      });
   }, [filteredDeals, leaderboardSortBy]);
-
-  // Top 3 promoted reps only include reps with > $0 in the active ranking metric
-  const leaderboardPodiumItems = useMemo(() => {
-    return leaderboardData.filter(r => (leaderboardSortBy === 'commit' ? r.commit > 0 : r.attained > 0));
-  }, [leaderboardData, leaderboardSortBy]);
 
   // Partner Ecosystem (No Source filter; supports Partner Source Col Z & Partner Influence Col Y filters)
   const partnerSourceOptions = useMemo(() => {
@@ -974,7 +965,7 @@ export default function App() {
         )}
 
         {/* =================================================================== */}
-        {/* TAB 2: REP PIPELINE LEADERBOARD (Dynamic 1st/2nd/3rd Podium)        */}
+        {/* TAB 2: REP PIPELINE LEADERBOARD (Entire Leaderboard Updates/Blanks) */}
         {/* =================================================================== */}
         {activeTab === 'leaderboard' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
@@ -1016,87 +1007,100 @@ export default function App() {
               </div>
             </div>
 
-            {/* Dynamic 1st, 2nd, 3rd Place Highlight Cards */}
-            <PodiumCards
-              items={leaderboardPodiumItems}
-              filterKey={`${teamFilter}-${sourceFilter}-${leaderboardSortBy}-${searchQuery}`}
-              metricLabel={leaderboardSortBy === 'commit' ? 'Total Commit ACV' : 'Pipeline Attained ACV'}
-              subMetricLabel={leaderboardSortBy === 'commit' ? 'Pipeline Attained' : 'Commit ACV'}
-              formatValue={(r) => `$${(leaderboardSortBy === 'commit' ? r.commit : r.attained).toLocaleString()}`}
-              formatSubValue={(r) => `$${(leaderboardSortBy === 'commit' ? r.attained : r.commit).toLocaleString()}`}
-              onSelect={(repName) => setSelectedRep(prev => prev === repName ? null : repName)}
-            />
+            {leaderboardData.length === 0 ? (
+              <div className="p-10 text-center text-xs text-slate-500 bg-slate-50/70 rounded-2xl border border-dashed border-slate-200">
+                No reps have {leaderboardSortBy === 'commit' ? 'Commit' : 'Pipeline Attained'} deals for {teamFilter === 'ALL' ? 'All Teams' : teamFilter} ({sourceFilter === 'ALL' ? 'All Sources' : sourceFilter}).
+              </div>
+            ) : (
+              <>
+                <PodiumCards
+                  items={leaderboardData}
+                  filterKey={`${teamFilter}-${sourceFilter}-${leaderboardSortBy}-${searchQuery}`}
+                  metricLabel={leaderboardSortBy === 'commit' ? 'Total Commit ACV' : 'Pipeline Attained ACV'}
+                  subMetricLabel={leaderboardSortBy === 'commit' ? 'Pipeline Attained' : 'Commit ACV'}
+                  formatValue={(r) => `$${(leaderboardSortBy === 'commit' ? r.commit : r.attained).toLocaleString()}`}
+                  formatSubValue={(r) => `$${(leaderboardSortBy === 'commit' ? r.attained : r.commit).toLocaleString()}`}
+                  onSelect={(repName) => setSelectedRep(prev => prev === repName ? null : repName)}
+                />
 
-            <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 border-b text-slate-500 font-semibold">
-                    <th className="py-3 px-4">Rank & Account Executive</th>
-                    <th className="py-3 px-4 text-right">Attained</th>
-                    <th className="py-3 px-4 text-right">Commit</th>
-                    <th className="py-3 px-4 text-right">Total Working Pool</th>
-                    <th className="py-3 px-4 text-center">Deals</th>
-                    <th className="py-3 px-4 text-center">Inspect</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {leaderboardData.map((r, idx) => {
-                    const isExpanded = selectedRep === r.name;
-                    return (
-                      <React.Fragment key={r.name}>
-                        <tr className={`hover:bg-slate-50 cursor-pointer ${isExpanded ? 'bg-indigo-50/60' : ''}`} onClick={() => setSelectedRep(isExpanded ? null : r.name)}>
-                          <td className="py-3 px-4 font-bold text-slate-900">
-                            <span className="inline-block w-6 text-slate-400">#{idx + 1}</span> {r.name}
-                          </td>
-                          <td className="py-3 px-4 text-right font-black text-emerald-600">${r.attained.toLocaleString()}</td>
-                          <td className="py-3 px-4 text-right font-semibold text-indigo-700">${r.commit.toLocaleString()}</td>
-                          <td className="py-3 px-4 text-right font-medium">${r.pool.toLocaleString()}</td>
-                          <td className="py-3 px-4 text-center">{r.deals.length}</td>
-                          <td className="py-3 px-4 text-center">
-                            <button className="px-2.5 py-1 text-[11px] font-semibold bg-indigo-50 text-indigo-700 rounded hover:bg-indigo-100">
-                              {isExpanded ? 'Collapse' : 'View Deals'}
-                            </button>
-                          </td>
-                        </tr>
-                        {isExpanded && (
-                          <tr className="bg-slate-50/90">
-                            <td colSpan="6" className="p-4 border-y-2 border-indigo-200">
-                              <div className="bg-white rounded-xl border p-3 space-y-2">
-                                <h4 className="font-bold text-xs">Deals for {r.name}</h4>
-                                <table className="w-full text-xs">
-                                  <thead>
-                                    <tr className="border-b text-slate-500 font-semibold">
-                                      <th className="py-2 text-left">Opportunity</th>
-                                      <th className="py-2 text-left">Team</th>
-                                      <th className="py-2 text-left">Source</th>
-                                      <th className="py-2 text-right">ACV</th>
-                                      <th className="py-2 text-center">Likelihood</th>
-                                      <th className="py-2 text-left">Close Date</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-slate-100">
-                                    {r.deals.map(d => (
-                                      <tr key={d.id}>
-                                        <td className="py-2 font-medium text-indigo-600">{d.name}</td>
-                                        <td className="py-2">{d.team}</td>
-                                        <td className="py-2"><span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100">{d.source}</span></td>
-                                        <td className="py-2 text-right font-bold">${(d.acv || 0).toLocaleString()}</td>
-                                        <td className="py-2 text-center">{d.commitStatus}</td>
-                                        <td className="py-2 text-slate-500">{d.closeDate}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b text-slate-500 font-semibold">
+                        <th className="py-3 px-4">Rank & Account Executive</th>
+                        <th className="py-3 px-4 text-right">Attained</th>
+                        <th className="py-3 px-4 text-right">Commit</th>
+                        <th className="py-3 px-4 text-right">Total Working Pool</th>
+                        <th className="py-3 px-4 text-center">Deals</th>
+                        <th className="py-3 px-4 text-center">Inspect</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {leaderboardData.map((r, idx) => {
+                        const isExpanded = selectedRep === r.name;
+                        const matchingDeals = r.deals.filter(d => {
+                          const st = String(d.commitStatus || '').trim().toLowerCase();
+                          return leaderboardSortBy === 'commit' ? st === 'commit' : st === 'attained';
+                        });
+                        return (
+                          <React.Fragment key={r.name}>
+                            <tr className={`hover:bg-slate-50 cursor-pointer ${isExpanded ? 'bg-indigo-50/60' : ''}`} onClick={() => setSelectedRep(isExpanded ? null : r.name)}>
+                              <td className="py-3 px-4 font-bold text-slate-900">
+                                <span className="inline-block w-6 text-slate-400">#{idx + 1}</span> {r.name}
+                              </td>
+                              <td className={`py-3 px-4 text-right font-black ${leaderboardSortBy === 'attained' ? 'text-emerald-600' : 'text-slate-700'}`}>${r.attained.toLocaleString()}</td>
+                              <td className={`py-3 px-4 text-right font-bold ${leaderboardSortBy === 'commit' ? 'text-indigo-700' : 'text-slate-600'}`}>${r.commit.toLocaleString()}</td>
+                              <td className="py-3 px-4 text-right font-medium">${r.pool.toLocaleString()}</td>
+                              <td className="py-3 px-4 text-center">{matchingDeals.length}</td>
+                              <td className="py-3 px-4 text-center">
+                                <button className="px-2.5 py-1 text-[11px] font-semibold bg-indigo-50 text-indigo-700 rounded hover:bg-indigo-100">
+                                  {isExpanded ? 'Collapse' : 'View Deals'}
+                                </button>
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr className="bg-slate-50/90">
+                                <td colSpan="6" className="p-4 border-y-2 border-indigo-200">
+                                  <div className="bg-white rounded-xl border p-3 space-y-2">
+                                    <h4 className="font-bold text-xs">
+                                      {leaderboardSortBy === 'commit' ? 'Commit' : 'Attained'} Deals for {r.name}
+                                    </h4>
+                                    <table className="w-full text-xs">
+                                      <thead>
+                                        <tr className="border-b text-slate-500 font-semibold">
+                                          <th className="py-2 text-left">Opportunity</th>
+                                          <th className="py-2 text-left">Team</th>
+                                          <th className="py-2 text-left">Source</th>
+                                          <th className="py-2 text-right">ACV</th>
+                                          <th className="py-2 text-center">Likelihood</th>
+                                          <th className="py-2 text-left">Close Date</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100">
+                                        {matchingDeals.map(d => (
+                                          <tr key={d.id}>
+                                            <td className="py-2 font-medium text-indigo-600">{d.name}</td>
+                                            <td className="py-2">{d.team}</td>
+                                            <td className="py-2"><span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100">{d.source}</span></td>
+                                            <td className="py-2 text-right font-bold">${(d.acv || 0).toLocaleString()}</td>
+                                            <td className="py-2 text-center">{d.commitStatus}</td>
+                                            <td className="py-2 text-slate-500">{d.closeDate}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
         )}
 
