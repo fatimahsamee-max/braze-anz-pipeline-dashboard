@@ -8,16 +8,6 @@ import {
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxRnaoBJbf4B_dKDoeFDXAy2ZhJ32u9eQ1yPsz1YEHK36JEVmEPDOVW9PxoI_fMinzN/exec";
 const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSChLkaPJrSjfFtM1vTWbkl2uffjadl-oV5qCdkTIIqsE7kVU_3eh3Vp4suNJfjUltlcT1t00Pi9KIP/pub?gid=2048510077&single=true&output=csv";
 
-function normalizeTeamLabel(rawTeam) {
-  const s = String(rawTeam || '').toLowerCase().trim();
-  if (!s) return '';
-  if (s.includes('ent')) return 'ANZ ENT';
-  if (s.includes('scale')) return 'ANZ Scale';
-  if (s.includes('smb')) return 'ANZ SMB';
-  if (s.includes('am')) return 'ANZ AM';
-  return String(rawTeam || '').trim();
-}
-
 function TeamSpeedometer({ title, target, attained, commit, likely, pool, isMaster = false }) {
   const path = commit + (likely * 0.5);
   const gap = Math.max(0, target - attained);
@@ -141,7 +131,7 @@ function TeamSpeedometer({ title, target, attained, commit, likely, pool, isMast
   );
 }
 
-function PodiumCards({ items, filterKey, metricLabel, subMetricLabel, formatValue, formatSubValue, onSelect }) {
+function PodiumCards({ items, metricLabel, subMetricLabel, formatValue, formatSubValue }) {
   const top3 = items.slice(0, 3);
   if (top3.length === 0) return null;
 
@@ -174,11 +164,7 @@ function PodiumCards({ items, filterKey, metricLabel, subMetricLabel, formatValu
       {top3.map((item, idx) => {
         const st = styles[idx];
         return (
-          <div
-            key={`${filterKey}-${idx}-${item.name}`}
-            onClick={() => onSelect && onSelect(item.name)}
-            className={`rounded-2xl border p-4 shadow-sm flex flex-col justify-between transition hover:shadow-md ${onSelect ? 'cursor-pointer' : ''} ${st.card}`}
-          >
+          <div key={item.name} className={`rounded-2xl border p-4 shadow-sm flex flex-col justify-between ${st.card}`}>
             <div className="flex items-center justify-between mb-2">
               <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${st.badge}`}>
                 {idx === 0 ? <Trophy className={`w-3.5 h-3.5 ${st.iconColor}`} /> : <Medal className={`w-3.5 h-3.5 ${st.iconColor}`} />}
@@ -463,21 +449,15 @@ export default function App() {
 
   useEffect(() => { fetchLiveData(); }, []);
 
-  useEffect(() => {
-    setSelectedRep(null);
-  }, [teamFilter, sourceFilter, leaderboardSortBy, searchQuery]);
-
-  useEffect(() => {
-    setSelectedEcosystemPartner(null);
-  }, [teamFilter, partnerSourceFilter, partnerInfluenceFilter]);
-
+  // Helper to compute live KPI metrics for any Team + Source slice
   const computeSliceMetrics = (teamKey, sourceKey) => {
     let sliceDeals = deals;
     if (sourceKey !== 'ALL') {
       sliceDeals = sliceDeals.filter(d => d.source === sourceKey);
     }
     if (teamKey !== 'ALL') {
-      sliceDeals = sliceDeals.filter(d => normalizeTeamLabel(d.team) === teamKey);
+      const needle = teamKey.replace('ANZ ', '').toLowerCase();
+      sliceDeals = sliceDeals.filter(d => (d.team || '').toLowerCase().includes(needle));
     }
 
     let target = sheetSummary.totalTarget || 18710000;
@@ -490,15 +470,15 @@ export default function App() {
     }
 
     const attained = sliceDeals
-      .filter(d => String(d.commitStatus || '').trim().toLowerCase() === 'attained')
+      .filter(d => d.commitStatus === 'Attained')
       .reduce((sum, d) => sum + (d.acv || 0), 0);
 
     const commit = sliceDeals
-      .filter(d => String(d.commitStatus || '').trim().toLowerCase() === 'commit')
+      .filter(d => d.commitStatus === 'Commit')
       .reduce((sum, d) => sum + (d.acv || 0), 0);
 
     const likely = sliceDeals
-      .filter(d => String(d.commitStatus || '').trim().toLowerCase() === 'likely')
+      .filter(d => d.commitStatus === 'Likely')
       .reduce((sum, d) => sum + (d.acv || 0), 0);
 
     const pool = sliceDeals.reduce((sum, d) => sum + (d.acv || 0), 0);
@@ -527,43 +507,36 @@ export default function App() {
   const filteredDeals = useMemo(() => {
     return deals.filter(d => {
       const q = searchQuery.toLowerCase();
-      const matchesSearch = !q ||
-                            (d.name || '').toLowerCase().includes(q) ||
+      const matchesSearch = (d.name || '').toLowerCase().includes(q) ||
                             (d.ae || '').toLowerCase().includes(q) ||
                             (d.bdr || '').toLowerCase().includes(q) ||
                             (d.crossbeamPartners || '').toLowerCase().includes(q) ||
                             (d.partnerInfluence || '').toLowerCase().includes(q);
-      const matchesTeam = teamFilter === 'ALL' || normalizeTeamLabel(d.team) === teamFilter;
+      const matchesTeam = teamFilter === 'ALL' || (d.team || '').includes(teamFilter.replace('ANZ ', ''));
       const matchesSource = sourceFilter === 'ALL' || d.source === sourceFilter;
       return matchesSearch && matchesTeam && matchesSource;
     });
   }, [deals, searchQuery, teamFilter, sourceFilter]);
 
-  // Entire leaderboard (Podium + Table) dynamically filters & ranks by the active filter & metric
-  // If a filter (e.g. ANZ AM on Commit) has 0 reps with > $0 in that metric, returns [] (blank)
+  // Leaderboard sorted by either Attained or Commit
   const leaderboardData = useMemo(() => {
     const repMap = {};
     filteredDeals.forEach(d => {
-      const rep = String(d.ae || 'Unassigned').trim() || 'Unassigned';
+      const rep = d.ae || 'Unassigned';
       if (!repMap[rep]) repMap[rep] = { name: rep, attained: 0, commit: 0, likely: 0, pool: 0, deals: [] };
-      const acv = Number(d.acv) || 0;
-      const status = String(d.commitStatus || '').trim().toLowerCase();
-
-      repMap[rep].pool += acv;
+      repMap[rep].pool += (d.acv || 0);
       repMap[rep].deals.push(d);
-      if (status === 'attained') repMap[rep].attained += acv;
-      else if (status === 'commit') repMap[rep].commit += acv;
-      else if (status === 'likely') repMap[rep].likely += acv;
+      if (d.commitStatus === 'Attained') repMap[rep].attained += (d.acv || 0);
+      else if (d.commitStatus === 'Commit') repMap[rep].commit += (d.acv || 0);
+      else if (d.commitStatus === 'Likely') repMap[rep].likely += (d.acv || 0);
     });
 
-    return Object.values(repMap)
-      .filter(r => (leaderboardSortBy === 'commit' ? r.commit > 0 : r.attained > 0))
-      .sort((a, b) => {
-        if (leaderboardSortBy === 'commit') {
-          return b.commit - a.commit || b.attained - a.attained;
-        }
-        return b.attained - a.attained || b.commit - a.commit;
-      });
+    return Object.values(repMap).sort((a, b) => {
+      if (leaderboardSortBy === 'commit') {
+        return b.commit - a.commit || b.attained - a.attained;
+      }
+      return b.attained - a.attained || b.commit - a.commit;
+    });
   }, [filteredDeals, leaderboardSortBy]);
 
   // Partner Ecosystem (No Source filter; supports Partner Source Col Z & Partner Influence Col Y filters)
@@ -590,7 +563,7 @@ export default function App() {
   const partnerData = useMemo(() => {
     let relevantDeals = deals;
     if (teamFilter !== 'ALL') {
-      relevantDeals = relevantDeals.filter(d => normalizeTeamLabel(d.team) === teamFilter);
+      relevantDeals = relevantDeals.filter(d => (d.team || '').includes(teamFilter.replace('ANZ ', '')));
     }
     if (partnerSourceFilter !== 'ALL') {
       relevantDeals = relevantDeals.filter(d =>
@@ -634,7 +607,7 @@ export default function App() {
   const crossbeamData = useMemo(() => {
     const list = [];
     deals.forEach(d => {
-      if (teamFilter !== 'ALL' && normalizeTeamLabel(d.team) !== teamFilter) return;
+      if (teamFilter !== 'ALL' && !(d.team || '').includes(teamFilter.replace('ANZ ', ''))) return;
       if (sourceFilter !== 'ALL' && d.source !== sourceFilter) return;
 
       if (d.crossbeamPartners) {
@@ -671,8 +644,7 @@ export default function App() {
       const matchesBd = crossbeamBdFilter === 'ALL' || item.bdr === crossbeamBdFilter;
       const matchesStage = crossbeamStageFilter === 'ALL' || item.stage === crossbeamStageFilter;
       const q = searchQuery.toLowerCase();
-      const matchesSearch = !q ||
-                            (item.dealName || '').toLowerCase().includes(q) ||
+      const matchesSearch = (item.dealName || '').toLowerCase().includes(q) ||
                             (item.partner || '').toLowerCase().includes(q) ||
                             (item.ae || '').toLowerCase().includes(q) ||
                             (item.bdr || '').toLowerCase().includes(q);
@@ -680,12 +652,14 @@ export default function App() {
     });
   }, [crossbeamData, crossbeamPartnerFilter, crossbeamRepFilter, crossbeamBdFilter, crossbeamStageFilter, searchQuery]);
 
-  // Focus Opportunities
+  // Focus Opportunities:
+  // LHS: ANZ Prospecting Tab starting with Prospecting | MQL and Prospecting | PQL
+  // RHS: Opportunities in Qualifying stage in ANZ Tab with Close Date between 0-90 days
   const focusProspectingLHS = useMemo(() => {
     const q = focusSearch.toLowerCase();
     return prospectingRecords
       .filter(p => {
-        if (teamFilter !== 'ALL' && normalizeTeamLabel(p.team) !== teamFilter) return false;
+        if (teamFilter !== 'ALL' && !(p.team || '').includes(teamFilter.replace('ANZ ', ''))) return false;
         const st = (p.stage || '').toLowerCase();
         const isMqlOrPql = st.includes('prospecting | mql') || st.includes('prospecting | pql') || st.includes('mql') || st.includes('pql');
         if (!isMqlOrPql) return false;
@@ -697,6 +671,7 @@ export default function App() {
         return true;
       })
       .sort((a, b) => {
+        // Priority: Prospecting | MQL first, then Prospecting | PQL, then ACV desc
         const aIsMql = (a.stage || '').toLowerCase().includes('mql') ? 0 : 1;
         const bIsMql = (b.stage || '').toLowerCase().includes('mql') ? 0 : 1;
         if (aIsMql !== bIsMql) return aIsMql - bIsMql;
@@ -709,7 +684,7 @@ export default function App() {
     return deals
       .map(d => ({ ...d, days: getDaysUntilClose(d.closeDate) }))
       .filter(d => {
-        if (teamFilter !== 'ALL' && normalizeTeamLabel(d.team) !== teamFilter) return false;
+        if (teamFilter !== 'ALL' && !(d.team || '').includes(teamFilter.replace('ANZ ', ''))) return false;
         if (sourceFilter !== 'ALL' && d.source !== sourceFilter) return false;
         const isQualifying = (d.stage || '').trim().toLowerCase() === 'qualifying';
         if (!isQualifying) return false;
@@ -808,6 +783,7 @@ export default function App() {
         {/* =================================================================== */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
+            {/* KPI Summary Widgets reflecting Team & Source Filters */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                 <div className="flex justify-between text-xs text-slate-500 font-semibold mb-1">
@@ -850,6 +826,9 @@ export default function App() {
               </div>
             </div>
 
+            {/* Speedometers:
+                - When teamFilter === 'ALL': Master Total Pipeline Speedometer + 4 Team Speedometers (all filtered by sourceFilter)
+                - When filtered to a specific Team: Only show that selected Team's Speedometer */}
             {teamFilter === 'ALL' ? (
               <div className="space-y-4">
                 <div className="max-w-xl mx-auto">
@@ -894,6 +873,7 @@ export default function App() {
               </div>
             )}
 
+            {/* Opportunities Table */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="p-4 border-b border-slate-100 flex justify-between items-center">
                 <h3 className="font-bold text-sm">Opportunities ({filteredDeals.length})</h3>
@@ -965,147 +945,118 @@ export default function App() {
         )}
 
         {/* =================================================================== */}
-        {/* TAB 2: REP PIPELINE LEADERBOARD (Entire Leaderboard Updates/Blanks) */}
+        {/* TAB 2: REP PIPELINE LEADERBOARD (1st/2nd/3rd Podium + Commit Sort)  */}
         {/* =================================================================== */}
         {activeTab === 'leaderboard' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <Award className="w-5 h-5 text-amber-500" /> Rep Pipeline Leaderboard
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Showing {teamFilter === 'ALL' ? 'All ANZ Teams' : teamFilter} · {sourceFilter === 'ALL' ? 'All Sources' : sourceFilter} · Ranked by {leaderboardSortBy === 'commit' ? 'Most in Commit' : 'Pipeline Attained'}
-                </p>
-              </div>
+              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Award className="w-5 h-5 text-amber-500" /> Rep Pipeline Leaderboard {teamFilter !== 'ALL' ? `(${teamFilter})` : ''}
+              </h2>
 
-              <div className="flex flex-wrap items-center gap-3">
-                <input
-                  type="text"
-                  placeholder="Filter rep or deal..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="text-xs border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none w-48"
-                />
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Rank By:</span>
-                  <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs font-semibold">
-                    <button
-                      onClick={() => setLeaderboardSortBy('attained')}
-                      className={`px-3 py-1.5 rounded-md transition ${leaderboardSortBy === 'attained' ? 'bg-[#1B0B3B] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-                    >
-                      Pipeline Attained
-                    </button>
-                    <button
-                      onClick={() => setLeaderboardSortBy('commit')}
-                      className={`px-3 py-1.5 rounded-md transition ${leaderboardSortBy === 'commit' ? 'bg-[#FF595A] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-                    >
-                      Most in Commit
-                    </button>
-                  </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Rank By:</span>
+                <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs font-semibold">
+                  <button
+                    onClick={() => setLeaderboardSortBy('attained')}
+                    className={`px-3 py-1.5 rounded-md transition ${leaderboardSortBy === 'attained' ? 'bg-[#1B0B3B] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                  >
+                    Pipeline Attained
+                  </button>
+                  <button
+                    onClick={() => setLeaderboardSortBy('commit')}
+                    className={`px-3 py-1.5 rounded-md transition ${leaderboardSortBy === 'commit' ? 'bg-[#FF595A] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                  >
+                    Most in Commit
+                  </button>
                 </div>
               </div>
             </div>
 
-            {leaderboardData.length === 0 ? (
-              <div className="p-10 text-center text-xs text-slate-500 bg-slate-50/70 rounded-2xl border border-dashed border-slate-200">
-                No reps have {leaderboardSortBy === 'commit' ? 'Commit' : 'Pipeline Attained'} deals for {teamFilter === 'ALL' ? 'All Teams' : teamFilter} ({sourceFilter === 'ALL' ? 'All Sources' : sourceFilter}).
-              </div>
-            ) : (
-              <>
-                <PodiumCards
-                  items={leaderboardData}
-                  filterKey={`${teamFilter}-${sourceFilter}-${leaderboardSortBy}-${searchQuery}`}
-                  metricLabel={leaderboardSortBy === 'commit' ? 'Total Commit ACV' : 'Pipeline Attained ACV'}
-                  subMetricLabel={leaderboardSortBy === 'commit' ? 'Pipeline Attained' : 'Commit ACV'}
-                  formatValue={(r) => `$${(leaderboardSortBy === 'commit' ? r.commit : r.attained).toLocaleString()}`}
-                  formatSubValue={(r) => `$${(leaderboardSortBy === 'commit' ? r.attained : r.commit).toLocaleString()}`}
-                  onSelect={(repName) => setSelectedRep(prev => prev === repName ? null : repName)}
-                />
+            {/* 1st, 2nd, 3rd Place Highlight Cards */}
+            <PodiumCards
+              items={leaderboardData}
+              metricLabel={leaderboardSortBy === 'commit' ? 'Total Commit ACV' : 'Pipeline Attained ACV'}
+              subMetricLabel={leaderboardSortBy === 'commit' ? 'Pipeline Attained' : 'Commit ACV'}
+              formatValue={(r) => `$${(leaderboardSortBy === 'commit' ? r.commit : r.attained).toLocaleString()}`}
+              formatSubValue={(r) => `$${(leaderboardSortBy === 'commit' ? r.attained : r.commit).toLocaleString()}`}
+            />
 
-                <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50 border-b text-slate-500 font-semibold">
-                        <th className="py-3 px-4">Rank & Account Executive</th>
-                        <th className="py-3 px-4 text-right">Attained</th>
-                        <th className="py-3 px-4 text-right">Commit</th>
-                        <th className="py-3 px-4 text-right">Total Working Pool</th>
-                        <th className="py-3 px-4 text-center">Deals</th>
-                        <th className="py-3 px-4 text-center">Inspect</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {leaderboardData.map((r, idx) => {
-                        const isExpanded = selectedRep === r.name;
-                        const matchingDeals = r.deals.filter(d => {
-                          const st = String(d.commitStatus || '').trim().toLowerCase();
-                          return leaderboardSortBy === 'commit' ? st === 'commit' : st === 'attained';
-                        });
-                        return (
-                          <React.Fragment key={r.name}>
-                            <tr className={`hover:bg-slate-50 cursor-pointer ${isExpanded ? 'bg-indigo-50/60' : ''}`} onClick={() => setSelectedRep(isExpanded ? null : r.name)}>
-                              <td className="py-3 px-4 font-bold text-slate-900">
-                                <span className="inline-block w-6 text-slate-400">#{idx + 1}</span> {r.name}
-                              </td>
-                              <td className={`py-3 px-4 text-right font-black ${leaderboardSortBy === 'attained' ? 'text-emerald-600' : 'text-slate-700'}`}>${r.attained.toLocaleString()}</td>
-                              <td className={`py-3 px-4 text-right font-bold ${leaderboardSortBy === 'commit' ? 'text-indigo-700' : 'text-slate-600'}`}>${r.commit.toLocaleString()}</td>
-                              <td className="py-3 px-4 text-right font-medium">${r.pool.toLocaleString()}</td>
-                              <td className="py-3 px-4 text-center">{matchingDeals.length}</td>
-                              <td className="py-3 px-4 text-center">
-                                <button className="px-2.5 py-1 text-[11px] font-semibold bg-indigo-50 text-indigo-700 rounded hover:bg-indigo-100">
-                                  {isExpanded ? 'Collapse' : 'View Deals'}
-                                </button>
-                              </td>
-                            </tr>
-                            {isExpanded && (
-                              <tr className="bg-slate-50/90">
-                                <td colSpan="6" className="p-4 border-y-2 border-indigo-200">
-                                  <div className="bg-white rounded-xl border p-3 space-y-2">
-                                    <h4 className="font-bold text-xs">
-                                      {leaderboardSortBy === 'commit' ? 'Commit' : 'Attained'} Deals for {r.name}
-                                    </h4>
-                                    <table className="w-full text-xs">
-                                      <thead>
-                                        <tr className="border-b text-slate-500 font-semibold">
-                                          <th className="py-2 text-left">Opportunity</th>
-                                          <th className="py-2 text-left">Team</th>
-                                          <th className="py-2 text-left">Source</th>
-                                          <th className="py-2 text-right">ACV</th>
-                                          <th className="py-2 text-center">Likelihood</th>
-                                          <th className="py-2 text-left">Close Date</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-100">
-                                        {matchingDeals.map(d => (
-                                          <tr key={d.id}>
-                                            <td className="py-2 font-medium text-indigo-600">{d.name}</td>
-                                            <td className="py-2">{d.team}</td>
-                                            <td className="py-2"><span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100">{d.source}</span></td>
-                                            <td className="py-2 text-right font-bold">${(d.acv || 0).toLocaleString()}</td>
-                                            <td className="py-2 text-center">{d.commitStatus}</td>
-                                            <td className="py-2 text-slate-500">{d.closeDate}</td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            )}
+            <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b text-slate-500 font-semibold">
+                    <th className="py-3 px-4">Rank & Account Executive</th>
+                    <th className="py-3 px-4 text-right">Attained</th>
+                    <th className="py-3 px-4 text-right">Commit</th>
+                    <th className="py-3 px-4 text-right">Total Working Pool</th>
+                    <th className="py-3 px-4 text-center">Deals</th>
+                    <th className="py-3 px-4 text-center">Inspect</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {leaderboardData.map((r, idx) => {
+                    const isExpanded = selectedRep === r.name;
+                    return (
+                      <React.Fragment key={r.name}>
+                        <tr className={`hover:bg-slate-50 cursor-pointer ${isExpanded ? 'bg-indigo-50/60' : ''}`} onClick={() => setSelectedRep(isExpanded ? null : r.name)}>
+                          <td className="py-3 px-4 font-bold text-slate-900">
+                            <span className="inline-block w-6 text-slate-400">#{idx + 1}</span> {r.name}
+                          </td>
+                          <td className="py-3 px-4 text-right font-black text-emerald-600">${r.attained.toLocaleString()}</td>
+                          <td className="py-3 px-4 text-right font-semibold text-indigo-700">${r.commit.toLocaleString()}</td>
+                          <td className="py-3 px-4 text-right font-medium">${r.pool.toLocaleString()}</td>
+                          <td className="py-3 px-4 text-center">{r.deals.length}</td>
+                          <td className="py-3 px-4 text-center">
+                            <button className="px-2.5 py-1 text-[11px] font-semibold bg-indigo-50 text-indigo-700 rounded hover:bg-indigo-100">
+                              {isExpanded ? 'Collapse' : 'View Deals'}
+                            </button>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr className="bg-slate-50/90">
+                            <td colSpan="6" className="p-4 border-y-2 border-indigo-200">
+                              <div className="bg-white rounded-xl border p-3 space-y-2">
+                                <h4 className="font-bold text-xs">Deals for {r.name}</h4>
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="border-b text-slate-500 font-semibold">
+                                      <th className="py-2 text-left">Opportunity</th>
+                                      <th className="py-2 text-left">Team</th>
+                                      <th className="py-2 text-left">Source</th>
+                                      <th className="py-2 text-right">ACV</th>
+                                      <th className="py-2 text-center">Likelihood</th>
+                                      <th className="py-2 text-left">Close Date</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {r.deals.map(d => (
+                                      <tr key={d.id}>
+                                        <td className="py-2 font-medium text-indigo-600">{d.name}</td>
+                                        <td className="py-2">{d.team}</td>
+                                        <td className="py-2"><span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100">{d.source}</span></td>
+                                        <td className="py-2 text-right font-bold">${(d.acv || 0).toLocaleString()}</td>
+                                        <td className="py-2 text-center">{d.commitStatus}</td>
+                                        <td className="py-2 text-slate-500">{d.closeDate}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
         {/* =================================================================== */}
-        {/* TAB 3: PARTNER ECOSYSTEM (Col Z & Y Filters + Dynamic Podium)       */}
+        {/* TAB 3: PARTNER ECOSYSTEM (Col Z & Y Filters + 1st/2nd/3rd Podium)   */}
         {/* =================================================================== */}
         {activeTab === 'partners' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
@@ -1141,14 +1092,13 @@ export default function App() {
               </div>
             </div>
 
+            {/* 1st, 2nd, 3rd Place Partner Tiles */}
             <PodiumCards
               items={partnerData}
-              filterKey={`${teamFilter}-${partnerSourceFilter}-${partnerInfluenceFilter}`}
               metricLabel="Partner ACV"
               subMetricLabel="Attached / Sourced Deals"
               formatValue={(p) => `$${p.acv.toLocaleString()}`}
               formatSubValue={(p) => `${p.attachedCount} Attached · ${p.sourcedCount} Sourced`}
-              onSelect={(pName) => setSelectedEcosystemPartner(prev => prev === pName ? null : pName)}
             />
 
             <div className="overflow-x-auto border border-slate-200 rounded-2xl">
@@ -1305,6 +1255,7 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* LHS: ANZ Prospecting Tab starting with Prospecting | MQL and Prospecting | PQL */}
               <div className="space-y-3">
                 <div className="bg-indigo-50 border border-indigo-200 text-indigo-950 p-3 rounded-xl font-bold text-xs flex justify-between items-center">
                   <span>ANZ Prospecting (MQL & PQL Priority)</span>
@@ -1347,6 +1298,7 @@ export default function App() {
                 </div>
               </div>
 
+              {/* RHS: Qualifying Opportunities in ANZ Tab closing in 0-90 days */}
               <div className="space-y-3">
                 <div className="bg-rose-50 border border-rose-200 text-rose-950 p-3 rounded-xl font-bold text-xs flex justify-between items-center">
                   <span>Qualifying Opportunities Closing in 0–90 Days</span>
