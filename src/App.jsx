@@ -7,6 +7,7 @@ import {
 
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxRnaoBJbf4B_dKDoeFDXAy2ZhJ32u9eQ1yPsz1YEHK36JEVmEPDOVW9PxoI_fMinzN/exec";
 const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSChLkaPJrSjfFtM1vTWbkl2uffjadl-oV5qCdkTIIqsE7kVU_3eh3Vp4suNJfjUltlcT1t00Pi9KIP/pub?gid=2048510077&single=true&output=csv";
+const PROSPECTING_GVIZ_CSV_URL = "https://docs.google.com/spreadsheets/d/109jy9sFdx0s0aZq5CdxbgQnMH5INkUUKvjvhTYoZ8OA/gviz/tq?tqx=out:csv&sheet=ANZ%20Prospecting";
 
 function normalizeTeamLabel(rawTeam) {
   const s = String(rawTeam || '').toLowerCase().trim();
@@ -252,6 +253,57 @@ function parseFullCSV(text) {
   return rows;
 }
 
+function parseMoneyHelper(str) {
+  const s = String(str || '0').trim();
+  const num = parseFloat(s.replace(/[^0-9.-]/g, '')) || 0;
+  return s.toUpperCase().includes('M') ? num * 1000000 : num;
+}
+
+function parseProspectingCsvRows(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+  let headerIdx = rows.findIndex(r => {
+    const joined = r.join('|').toLowerCase();
+    return (joined.includes('account') || joined.includes('opportunity')) && (joined.includes('stage') || joined.includes('team'));
+  });
+
+  const startIdx = headerIdx !== -1 ? headerIdx + 1 : 0;
+  const headerRow = headerIdx !== -1 ? rows[headerIdx].map(h => String(h || '').toLowerCase()) : [];
+  const acctColIdx = headerRow[0] && headerRow[0].includes('account') ? 0 : (headerRow[1] && headerRow[1].includes('account') ? 1 : 0);
+
+  const parsed = [];
+  for (let i = startIdx; i < rows.length; i++) {
+    const cols = rows[i];
+    const acctName = String(cols[acctColIdx] || '').trim();
+    if (!acctName) continue;
+    const low = acctName.toLowerCase();
+    if (low === 'total' || low === 'cotal' || low.includes('how to use') || low.includes('last updated') || low.includes('refreshed')) continue;
+
+    // Skip summary rows at top of sheet if header wasn't found
+    if (headerIdx === -1 && i < 32) continue;
+
+    const teamVal = String(cols[acctColIdx + 1] || '').trim();
+    const stageVal = String(cols[acctColIdx + 2] || 'Prospecting').trim();
+    if (!teamVal && !stageVal) continue;
+
+    parsed.push({
+      id: `prosp-${i}`,
+      name: acctName,
+      team: teamVal,
+      stage: stageVal,
+      acv: parseMoneyHelper(cols[acctColIdx + 3]),
+      ae: String(cols[acctColIdx + 4] || '').trim(),
+      bdr: String(cols[acctColIdx + 5] || '').trim(),
+      crossbeamPartners: String(cols[acctColIdx + 6] || '').trim(),
+      partnerAttached: String(cols[acctColIdx + 7] || '').trim(),
+      partnerSourced: String(cols[acctColIdx + 8] || '').trim(),
+      nextSteps: String(cols[acctColIdx + 20] || '').trim(),
+      partnerInfluence: String(cols[23] || '').trim(),
+      sourcePartner: String(cols[24] || '').trim()
+    });
+  }
+  return parsed;
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [teamFilter, setTeamFilter] = useState('ALL');
@@ -316,6 +368,28 @@ export default function App() {
     return Math.ceil((targetDate - today) / (1000 * 60 * 60 * 24));
   };
 
+  // Fallback helper to fetch "ANZ Prospecting" tab directly if Web App deployment hasn't been re-versioned yet
+  const fetchProspectingTabFallback = async () => {
+    const rawUrl = `${PROSPECTING_GVIZ_CSV_URL}&_t=${Date.now()}`;
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(rawUrl)}`;
+    try {
+      let res;
+      try {
+        res = await fetch(rawUrl);
+        if (!res.ok) throw new Error('Direct gviz fetch failed');
+      } catch {
+        res = await fetch(proxyUrl);
+      }
+      if (!res.ok) return [];
+      const csvText = await res.text();
+      const rows = parseFullCSV(csvText);
+      return parseProspectingCsvRows(rows);
+    } catch (e) {
+      console.warn('Fallback ANZ Prospecting fetch failed:', e);
+      return [];
+    }
+  };
+
   const fetchLiveData = async () => {
     setIsRefreshing(true);
     setErrorMsg(null);
@@ -326,8 +400,11 @@ export default function App() {
         const payload = await jsonRes.json();
         if (payload && payload.status === 'ok' && Array.isArray(payload.deals)) {
           setDeals(payload.deals);
-          if (Array.isArray(payload.prospecting)) {
+          if (Array.isArray(payload.prospecting) && payload.prospecting.length > 0) {
             setProspectingRecords(payload.prospecting);
+          } else {
+            const fallbackProsp = await fetchProspectingTabFallback();
+            if (fallbackProsp.length > 0) setProspectingRecords(fallbackProsp);
           }
           if (payload.summary) setSheetSummary(payload.summary);
           setLastUpdated(payload.summary?.lastUpdated || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
@@ -354,12 +431,6 @@ export default function App() {
       const csvText = await res.text();
       const rows = parseFullCSV(csvText);
 
-      const parseMoney = (str) => {
-        const s = String(str || '0').trim();
-        const num = parseFloat(s.replace(/[^0-9.-]/g, '')) || 0;
-        return s.toUpperCase().includes('M') ? num * 1000000 : num;
-      };
-
       const parsedTeams = {
         'ANZ ENT':   { target: 9650000, attained: 0, commit: 0, likely: 0 },
         'ANZ Scale': { target: 4980000, attained: 0, commit: 0, likely: 0 },
@@ -369,20 +440,20 @@ export default function App() {
 
       rows.slice(0, 25).forEach(row => {
         const label = String(row[0] || '').trim();
-        if (label.includes('ANZ SMB Target'))   { parsedTeams['ANZ SMB'].target = parseMoney(row[1]); parsedTeams['ANZ SMB'].attained = parseMoney(row[2]); }
-        if (label.includes('ANZ Scale Target')) { parsedTeams['ANZ Scale'].target = parseMoney(row[1]); parsedTeams['ANZ Scale'].attained = parseMoney(row[2]); }
-        if (label.includes('ANZ ENT Target'))   { parsedTeams['ANZ ENT'].target = parseMoney(row[1]); parsedTeams['ANZ ENT'].attained = parseMoney(row[2]); }
-        if (label.includes('ANZ AM Target'))    { parsedTeams['ANZ AM'].target = parseMoney(row[1]); parsedTeams['ANZ AM'].attained = parseMoney(row[2]); }
+        if (label.includes('ANZ SMB Target'))   { parsedTeams['ANZ SMB'].target = parseMoneyHelper(row[1]); parsedTeams['ANZ SMB'].attained = parseMoneyHelper(row[2]); }
+        if (label.includes('ANZ Scale Target')) { parsedTeams['ANZ Scale'].target = parseMoneyHelper(row[1]); parsedTeams['ANZ Scale'].attained = parseMoneyHelper(row[2]); }
+        if (label.includes('ANZ ENT Target'))   { parsedTeams['ANZ ENT'].target = parseMoneyHelper(row[1]); parsedTeams['ANZ ENT'].attained = parseMoneyHelper(row[2]); }
+        if (label.includes('ANZ AM Target'))    { parsedTeams['ANZ AM'].target = parseMoneyHelper(row[1]); parsedTeams['ANZ AM'].attained = parseMoneyHelper(row[2]); }
 
-        if (label.includes('ANZ SMB - Commit'))   parsedTeams['ANZ SMB'].commit = parseMoney(row[1]);
-        if (label.includes('ANZ Scale - Commit')) parsedTeams['ANZ Scale'].commit = parseMoney(row[1]);
-        if (label.includes('ANZ ENT - Commit'))   parsedTeams['ANZ ENT'].commit = parseMoney(row[1]);
-        if (label.includes('ANZ AM - Commit'))    parsedTeams['ANZ AM'].commit = parseMoney(row[1]);
+        if (label.includes('ANZ SMB - Commit'))   parsedTeams['ANZ SMB'].commit = parseMoneyHelper(row[1]);
+        if (label.includes('ANZ Scale - Commit')) parsedTeams['ANZ Scale'].commit = parseMoneyHelper(row[1]);
+        if (label.includes('ANZ ENT - Commit'))   parsedTeams['ANZ ENT'].commit = parseMoneyHelper(row[1]);
+        if (label.includes('ANZ AM - Commit'))    parsedTeams['ANZ AM'].commit = parseMoneyHelper(row[1]);
 
-        if (label.includes('ANZ SMB - Likely'))   parsedTeams['ANZ SMB'].likely = parseMoney(row[1]);
-        if (label.includes('ANZ Scale - Likely')) parsedTeams['ANZ Scale'].likely = parseMoney(row[1]);
-        if (label.includes('ANZ ENT - Likely'))   parsedTeams['ANZ ENT'].likely = parseMoney(row[1]);
-        if (label.includes('ANZ AM - Likely'))    parsedTeams['ANZ AM'].likely = parseMoney(row[1]);
+        if (label.includes('ANZ SMB - Likely'))   parsedTeams['ANZ SMB'].likely = parseMoneyHelper(row[1]);
+        if (label.includes('ANZ Scale - Likely')) parsedTeams['ANZ Scale'].likely = parseMoneyHelper(row[1]);
+        if (label.includes('ANZ ENT - Likely'))   parsedTeams['ANZ ENT'].likely = parseMoneyHelper(row[1]);
+        if (label.includes('ANZ AM - Likely'))    parsedTeams['ANZ AM'].likely = parseMoneyHelper(row[1]);
       });
 
       let headerIdx = rows.findIndex(r => {
@@ -392,7 +463,6 @@ export default function App() {
 
       if (headerIdx !== -1) {
         const parsedDeals = [];
-        const parsedProsp = [];
         for (let i = headerIdx + 1; i < rows.length; i++) {
           const cols = rows[i];
           const colA = String(cols[0] || '').trim();
@@ -416,7 +486,7 @@ export default function App() {
               name: oppName || colA,
               team: String(cols[2] || 'ANZ ENT').trim(),
               stage: String(cols[3] || 'Qualifying').trim(),
-              acv: parseMoney(cols[4]),
+              acv: parseMoneyHelper(cols[4]),
               ae: String(cols[5] || 'Unassigned').trim(),
               bdr: String(cols[6] || '').trim(),
               crossbeamPartners: String(cols[7] || '').trim(),
@@ -430,28 +500,15 @@ export default function App() {
               partnerInfluence: String(cols[24] || '').trim(),
               sourcePartner: String(cols[25] || '').trim()
             });
-          } else {
-            parsedProsp.push({
-              id: `prosp-${i}`,
-              name: colA,
-              team: colB || 'ANZ Scale',
-              stage: String(cols[2] || 'Prospecting').trim(),
-              acv: parseMoney(cols[3]),
-              ae: String(cols[4] || 'Unassigned').trim(),
-              bdr: String(cols[5] || '').trim(),
-              crossbeamPartners: String(cols[6] || '').trim(),
-              partnerAttached: String(cols[7] || '').trim(),
-              partnerSourced: String(cols[8] || '').trim(),
-              nextSteps: String(cols[20] || '').trim(),
-              partnerInfluence: String(cols[23] || '').trim(),
-              sourcePartner: String(cols[24] || '').trim()
-            });
           }
         }
         setDeals(parsedDeals);
-        if (parsedProsp.length > 0) setProspectingRecords(parsedProsp);
         setSheetSummary(prev => ({ ...prev, teams: parsedTeams }));
       }
+
+      const fallbackProsp = await fetchProspectingTabFallback();
+      if (fallbackProsp.length > 0) setProspectingRecords(fallbackProsp);
+
       setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
     } catch (err) {
       console.error("Failed to load sheet data:", err);
@@ -539,8 +596,6 @@ export default function App() {
     });
   }, [deals, searchQuery, teamFilter, sourceFilter]);
 
-  // Entire leaderboard (Podium + Table) dynamically filters & ranks by the active filter & metric
-  // If a filter (e.g. ANZ AM on Commit) has 0 reps with > $0 in that metric, returns [] (blank)
   const leaderboardData = useMemo(() => {
     const repMap = {};
     filteredDeals.forEach(d => {
@@ -566,7 +621,6 @@ export default function App() {
       });
   }, [filteredDeals, leaderboardSortBy]);
 
-  // Partner Ecosystem (No Source filter; supports Partner Source Col Z & Partner Influence Col Y filters)
   const partnerSourceOptions = useMemo(() => {
     const set = new Set();
     deals.forEach(d => {
@@ -630,7 +684,6 @@ export default function App() {
     return Object.values(counts).sort((a, b) => b.acv - a.acv || b.count - a.count);
   }, [deals, teamFilter, partnerSourceFilter, partnerInfluenceFilter]);
 
-  // Crossbeam Overlaps (Includes Rep, BD, Partner, and Stage filters)
   const crossbeamData = useMemo(() => {
     const list = [];
     deals.forEach(d => {
@@ -680,31 +733,10 @@ export default function App() {
     });
   }, [crossbeamData, crossbeamPartnerFilter, crossbeamRepFilter, crossbeamBdFilter, crossbeamStageFilter, searchQuery]);
 
-  // Focus Opportunities
-  const focusProspectingLHS = useMemo(() => {
-    const q = focusSearch.toLowerCase();
-    return prospectingRecords
-      .filter(p => {
-        if (teamFilter !== 'ALL' && normalizeTeamLabel(p.team) !== teamFilter) return false;
-        const st = (p.stage || '').toLowerCase();
-        const isMqlOrPql = st.includes('prospecting | mql') || st.includes('prospecting | pql') || st.includes('mql') || st.includes('pql');
-        if (!isMqlOrPql) return false;
-        if (q) {
-          return (p.name || '').toLowerCase().includes(q) ||
-                 (p.ae || '').toLowerCase().includes(q) ||
-                 (p.bdr || '').toLowerCase().includes(q);
-        }
-        return true;
-      })
-      .sort((a, b) => {
-        const aIsMql = (a.stage || '').toLowerCase().includes('mql') ? 0 : 1;
-        const bIsMql = (b.stage || '').toLowerCase().includes('mql') ? 0 : 1;
-        if (aIsMql !== bIsMql) return aIsMql - bIsMql;
-        return (b.acv || 0) - (a.acv || 0);
-      });
-  }, [prospectingRecords, teamFilter, focusSearch]);
-
-  const focusQualifyingRHS = useMemo(() => {
+  // Focus Opportunities:
+  // LHS: Qualifying Opportunities in ANZ Tab closing in 0-90 days
+  // RHS: ANZ Prospecting Tab accounts (PQL & MQL prioritized)
+  const focusQualifyingLHS = useMemo(() => {
     const q = focusSearch.toLowerCase();
     return deals
       .map(d => ({ ...d, days: getDaysUntilClose(d.closeDate) }))
@@ -723,6 +755,30 @@ export default function App() {
       })
       .sort((a, b) => a.days - b.days);
   }, [deals, teamFilter, sourceFilter, focusSearch]);
+
+  const focusProspectingRHS = useMemo(() => {
+    const q = focusSearch.toLowerCase();
+    return prospectingRecords
+      .filter(p => {
+        if (teamFilter !== 'ALL' && normalizeTeamLabel(p.team) !== teamFilter) return false;
+        const st = (p.stage || '').toLowerCase();
+        const isMqlOrPql = st.includes('mql') || st.includes('pql');
+        if (!isMqlOrPql) return false;
+        if (q) {
+          return (p.name || '').toLowerCase().includes(q) ||
+                 (p.ae || '').toLowerCase().includes(q) ||
+                 (p.bdr || '').toLowerCase().includes(q) ||
+                 (p.crossbeamPartners || '').toLowerCase().includes(q);
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const aIsMql = (a.stage || '').toLowerCase().includes('mql') ? 0 : 1;
+        const bIsMql = (b.stage || '').toLowerCase().includes('mql') ? 0 : 1;
+        if (aIsMql !== bIsMql) return aIsMql - bIsMql;
+        return (b.acv || 0) - (a.acv || 0);
+      });
+  }, [prospectingRecords, teamFilter, focusSearch]);
 
   return (
     <div className="min-h-screen bg-[#F8F9FC] text-slate-900 font-sans">
@@ -774,7 +830,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Global Filter Bar (Source filter hidden on Partner Ecosystem tab) */}
         <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
@@ -803,9 +858,6 @@ export default function App() {
           )}
         </div>
 
-        {/* =================================================================== */}
-        {/* TAB 1: PIPELINE OVERVIEW                                            */}
-        {/* =================================================================== */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -964,9 +1016,6 @@ export default function App() {
           </div>
         )}
 
-        {/* =================================================================== */}
-        {/* TAB 2: REP PIPELINE LEADERBOARD (Entire Leaderboard Updates/Blanks) */}
-        {/* =================================================================== */}
         {activeTab === 'leaderboard' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1104,9 +1153,6 @@ export default function App() {
           </div>
         )}
 
-        {/* =================================================================== */}
-        {/* TAB 3: PARTNER ECOSYSTEM (Col Z & Y Filters + Dynamic Podium)       */}
-        {/* =================================================================== */}
         {activeTab === 'partners' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -1222,9 +1268,6 @@ export default function App() {
           </div>
         )}
 
-        {/* =================================================================== */}
-        {/* TAB 4: CROSSBEAM OVERLAPS (Rep + BD + Partner + Stage Filters)      */}
-        {/* =================================================================== */}
         {activeTab === 'crossbeam' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -1284,7 +1327,9 @@ export default function App() {
         )}
 
         {/* =================================================================== */}
-        {/* TAB 5: FOCUS OPPORTUNITIES (LHS: ANZ Prospecting | RHS: Qualifying) */}
+        {/* TAB 5: FOCUS OPPORTUNITIES                                          */}
+        {/*   LHS: Qualifying Opportunities Closing in 0-90 Days (ANZ Tab)      */}
+        {/*   RHS: PQL & MQL Accounts (ANZ Prospecting Tab)                     */}
         {/* =================================================================== */}
         {activeTab === 'focus' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
@@ -1305,19 +1350,62 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* LHS: Qualifying Opportunities in ANZ Tab closing in 0-90 days */}
               <div className="space-y-3">
-                <div className="bg-indigo-50 border border-indigo-200 text-indigo-950 p-3 rounded-xl font-bold text-xs flex justify-between items-center">
-                  <span>ANZ Prospecting (MQL & PQL Priority)</span>
-                  <span className="bg-indigo-600 text-white px-2 py-0.5 rounded-full text-[11px]">{focusProspectingLHS.length} Accounts</span>
+                <div className="bg-rose-50 border border-rose-200 text-rose-950 p-3 rounded-xl font-bold text-xs flex justify-between items-center">
+                  <span>Qualifying Opportunities Closing in 0–90 Days</span>
+                  <span className="bg-[#FF595A] text-white px-2 py-0.5 rounded-full text-[11px]">{focusQualifyingLHS.length} Deals</span>
                 </div>
 
                 <div className="space-y-2.5 max-h-[650px] overflow-y-auto pr-1">
-                  {focusProspectingLHS.length === 0 ? (
+                  {focusQualifyingLHS.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-slate-500 border border-dashed rounded-xl">
+                      No Qualifying stage opportunities closing within 0–90 days match the current filter.
+                    </div>
+                  ) : (
+                    focusQualifyingLHS.map(d => (
+                      <div key={d.id} className="p-3.5 border border-slate-200 rounded-xl bg-white shadow-xs hover:border-rose-300 transition space-y-1.5">
+                        <div className="flex justify-between items-start gap-2">
+                          {d.id.startsWith('006') ? (
+                            <a href={`https://braze.lightning.force.com/lightning/r/Opportunity/${d.id}/view`} target="_blank" rel="noreferrer" className="font-bold text-xs text-indigo-600 hover:underline flex items-center gap-1">
+                              {d.name} <ExternalLink className="w-3 h-3 text-slate-400" />
+                            </a>
+                          ) : (
+                            <span className="font-bold text-xs text-slate-900">{d.name}</span>
+                          )}
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-rose-50 text-rose-700 border-rose-200 whitespace-nowrap">
+                            {d.days}d ({d.closeDate})
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-xs text-slate-600">
+                          <span>{d.team} · AE: <strong className="text-slate-800">{d.ae}</strong> · <span className="font-medium">{d.source}</span></span>
+                          <span className="font-black text-slate-900">${(d.acv || 0).toLocaleString()}</span>
+                        </div>
+                        {d.nextSteps && (
+                          <div className="text-[11px] text-slate-500 bg-slate-50 px-2.5 py-1 rounded border border-slate-100 truncate" title={d.nextSteps}>
+                            Next: {d.nextSteps}
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* RHS: ANZ Prospecting Accounts (MQL & PQL) */}
+              <div className="space-y-3">
+                <div className="bg-indigo-50 border border-indigo-200 text-indigo-950 p-3 rounded-xl font-bold text-xs flex justify-between items-center">
+                  <span>ANZ Prospecting Accounts (MQL & PQL)</span>
+                  <span className="bg-indigo-600 text-white px-2 py-0.5 rounded-full text-[11px]">{focusProspectingRHS.length} Accounts</span>
+                </div>
+
+                <div className="space-y-2.5 max-h-[650px] overflow-y-auto pr-1">
+                  {focusProspectingRHS.length === 0 ? (
                     <div className="p-6 text-center text-xs text-slate-500 border border-dashed rounded-xl">
                       No Prospecting | MQL or Prospecting | PQL accounts match the current filter.
                     </div>
                   ) : (
-                    focusProspectingLHS.map(p => {
+                    focusProspectingRHS.map(p => {
                       const isMql = (p.stage || '').toLowerCase().includes('mql');
                       return (
                         <div key={p.id} className="p-3.5 border border-slate-200 rounded-xl bg-white shadow-xs hover:border-indigo-300 transition space-y-1.5">
@@ -1343,47 +1431,6 @@ export default function App() {
                         </div>
                       );
                     })
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="bg-rose-50 border border-rose-200 text-rose-950 p-3 rounded-xl font-bold text-xs flex justify-between items-center">
-                  <span>Qualifying Opportunities Closing in 0–90 Days</span>
-                  <span className="bg-[#FF595A] text-white px-2 py-0.5 rounded-full text-[11px]">{focusQualifyingRHS.length} Deals</span>
-                </div>
-
-                <div className="space-y-2.5 max-h-[650px] overflow-y-auto pr-1">
-                  {focusQualifyingRHS.length === 0 ? (
-                    <div className="p-6 text-center text-xs text-slate-500 border border-dashed rounded-xl">
-                      No Qualifying stage opportunities closing within 0–90 days match the current filter.
-                    </div>
-                  ) : (
-                    focusQualifyingRHS.map(d => (
-                      <div key={d.id} className="p-3.5 border border-slate-200 rounded-xl bg-white shadow-xs hover:border-rose-300 transition space-y-1.5">
-                        <div className="flex justify-between items-start gap-2">
-                          {d.id.startsWith('006') ? (
-                            <a href={`https://braze.lightning.force.com/lightning/r/Opportunity/${d.id}/view`} target="_blank" rel="noreferrer" className="font-bold text-xs text-indigo-600 hover:underline flex items-center gap-1">
-                              {d.name} <ExternalLink className="w-3 h-3 text-slate-400" />
-                            </a>
-                          ) : (
-                            <span className="font-bold text-xs text-slate-900">{d.name}</span>
-                          )}
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-rose-50 text-rose-700 border-rose-200 whitespace-nowrap">
-                            {d.days}d ({d.closeDate})
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-xs text-slate-600">
-                          <span>{d.team} · AE: <strong className="text-slate-800">{d.ae}</strong> · <span className="font-medium">{d.source}</span></span>
-                          <span className="font-black text-slate-900">${(d.acv || 0).toLocaleString()}</span>
-                        </div>
-                        {d.nextSteps && (
-                          <div className="text-[11px] text-slate-500 bg-slate-50 px-2.5 py-1 rounded border border-slate-100 truncate" title={d.nextSteps}>
-                            Next: {d.nextSteps}
-                          </div>
-                        )}
-                      </div>
-                    ))
                   )}
                 </div>
               </div>
