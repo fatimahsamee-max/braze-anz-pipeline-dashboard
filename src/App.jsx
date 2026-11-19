@@ -861,6 +861,7 @@ export default function App() {
         {activeTab === 'overview' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* 1st Card: TARGET */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                 <div className="flex justify-between text-xs text-slate-500 font-semibold mb-1">
                   <span>{teamFilter !== 'ALL' ? teamFilter : (sourceFilter !== 'ALL' ? sourceFilter : 'TOTAL ANZ')} TARGET</span>
@@ -872,6 +873,7 @@ export default function App() {
                 )}
               </div>
 
+              {/* 2nd Card: PG ATTAINED */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                 <div className="flex justify-between text-xs text-slate-500 font-semibold mb-1">
                   <span>PG ATTAINED</span>
@@ -881,6 +883,7 @@ export default function App() {
                 <div className="text-xs text-emerald-600 font-semibold mt-1">{activeMetrics.percentage}% of Target</div>
               </div>
 
+              {/* 3rd Card: REMAINING GAP */}
               <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
                 <div className="flex justify-between text-xs text-slate-500 font-semibold mb-1">
                   <span>REMAINING GAP</span>
@@ -889,6 +892,7 @@ export default function App() {
                 <div className="text-2xl font-bold text-rose-600">${(activeMetrics.remainingGap / 1000000).toFixed(2)}M</div>
               </div>
 
+              {/* 4th Card: COMMIT / LIKELY PATH */}
               <div className="bg-white p-5 rounded-2xl border-2 border-indigo-200 shadow-sm">
                 <div className="flex justify-between text-xs text-slate-500 font-semibold mb-1">
                   <span>COMMIT / LIKELY PATH</span>
