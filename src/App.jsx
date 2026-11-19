@@ -23,8 +23,9 @@ function TeamSpeedometer({ title, target, attained, commit, likely, pool, isMast
   const path = commit + (likely * 0.5);
   const gap = Math.max(0, target - attained);
   const percentage = target > 0 ? Math.min(100, Math.round((attained / target) * 100)) : 0;
-  const coveragePercent = target > 0 ? Math.min(100, Math.round((pool / target) * 100)) : 0;
-  const pathPercent = target > 0 ? Math.min(100, Math.round((path / target) * 100)) : 0;
+  // Uncapped true coverage percentage (e.g. Pool 2,000 / Target 1,000 = 200%)
+  const coveragePercent = target > 0 ? Math.round((pool / target) * 100) : 0;
+  const pathPercent = target > 0 ? Math.round((path / target) * 100) : 0;
 
   const radius = 80;
   const strokeWidth = 14;
@@ -116,10 +117,25 @@ function TeamSpeedometer({ title, target, attained, commit, likely, pool, isMast
         </div>
       </div>
 
-      <div className="pt-2 border-t border-slate-100 space-y-1.5">
-        <div className="flex justify-between items-center text-[10px] font-semibold text-slate-600">
-          <span>Working Coverage: {coveragePercent}%</span>
-          <span>Gap: {formatShort(gap)}</span>
+      <div className="pt-2 border-t border-slate-100 space-y-2">
+        {/* Highlighted Working Pool ACV & Coverage Percentage */}
+        <div className="bg-slate-50 border border-slate-200/80 rounded-xl px-2.5 py-1.5 flex items-center justify-between">
+          <div>
+            <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Working Pool</div>
+            <div className="text-xs font-extrabold text-slate-900">{formatShort(pool)}</div>
+          </div>
+          <div className="text-right">
+            <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Coverage</div>
+            <span className={`inline-block text-xs font-black px-2 py-0.5 rounded-md ${
+              coveragePercent >= 100
+                ? 'bg-emerald-100 text-emerald-800'
+                : coveragePercent >= 50
+                  ? 'bg-amber-100 text-amber-800'
+                  : 'bg-rose-100 text-rose-800'
+            }`}>
+              {coveragePercent}%
+            </span>
+          </div>
         </div>
 
         <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden flex">
@@ -133,9 +149,9 @@ function TeamSpeedometer({ title, target, attained, commit, likely, pool, isMast
           />
         </div>
 
-        <div className="flex justify-between items-center text-[9.5px] text-slate-500 pt-0.5">
+        <div className="flex justify-between items-center text-[9.5px] text-slate-500">
           <span>Path: <strong className="text-slate-800">{formatShort(path)}</strong> ({pathPercent}%)</span>
-          <span>Pool: <strong className="text-slate-800">{formatShort(pool)}</strong></span>
+          <span>Gap: <strong className="text-slate-800">{formatShort(gap)}</strong></span>
         </div>
       </div>
     </div>
@@ -583,7 +599,16 @@ export default function App() {
     const commit = dealsCommit + prospCommit;
     const likely = dealsLikely + prospLikely;
 
-    const pool = sliceDeals.reduce((sum, d) => sum + (d.acv || 0), 0);
+    // Working Pool = Qualifying deals on ANZ tab + all active lead sources on ANZ Prospecting tab
+    const qualifyingAnzPool = sliceDeals
+      .filter(d => String(d.stage || '').trim().toLowerCase() === 'qualifying')
+      .reduce((sum, d) => sum + (d.acv || 0), 0);
+
+    const prospectingPool = sliceProspecting
+      .reduce((sum, p) => sum + (p.acv || 0), 0);
+
+    const pool = qualifyingAnzPool + prospectingPool;
+
     const path = commit + (likely * 0.5);
     const remainingGap = Math.max(0, target - attained);
     const gapToPath = Math.max(0, target - (attained + path));
