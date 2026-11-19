@@ -881,6 +881,14 @@ export default function App() {
                 <div className="text-xs text-emerald-600 font-semibold mt-1">{activeMetrics.percentage}% of Target</div>
               </div>
 
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="flex justify-between text-xs text-slate-500 font-semibold mb-1">
+                  <span>REMAINING GAP</span>
+                  <AlertCircle className="w-4 h-4 text-rose-500" />
+                </div>
+                <div className="text-2xl font-bold text-rose-600">${(activeMetrics.remainingGap / 1000000).toFixed(2)}M</div>
+              </div>
+
               <div className="bg-white p-5 rounded-2xl border-2 border-indigo-200 shadow-sm">
                 <div className="flex justify-between text-xs text-slate-500 font-semibold mb-1">
                   <span>COMMIT / LIKELY PATH</span>
@@ -891,14 +899,6 @@ export default function App() {
                   <span>Gap to path:</span>
                   <span className="font-bold text-amber-700">${(activeMetrics.gapToPath / 1000000).toFixed(2)}M</span>
                 </div>
-              </div>
-
-              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="flex justify-between text-xs text-slate-500 font-semibold mb-1">
-                  <span>REMAINING GAP</span>
-                  <AlertCircle className="w-4 h-4 text-rose-500" />
-                </div>
-                <div className="text-2xl font-bold text-rose-600">${(activeMetrics.remainingGap / 1000000).toFixed(2)}M</div>
               </div>
             </div>
 
