@@ -285,6 +285,8 @@ function parseProspectingCsvRows(rows) {
     if (!teamVal && !stageVal) continue;
     if (stageVal.toLowerCase() === 'already in pipe') continue;
 
+    const prospSource = stageVal.toLowerCase().includes('mql') ? 'Marketing Sourced' : 'BDR Sourced';
+
     parsed.push({
       id: `prosp-${i}`,
       name: acctName,
@@ -296,7 +298,9 @@ function parseProspectingCsvRows(rows) {
       crossbeamPartners: String(cols[acctColIdx + 6] || '').trim(),
       partnerAttached: String(cols[acctColIdx + 7] || '').trim(),
       partnerSourced: String(cols[acctColIdx + 8] || '').trim(),
+      commitStatus: String(cols[acctColIdx + 17] || 'Non Commit').trim() || 'Non Commit',
       nextSteps: String(cols[acctColIdx + 20] || '').trim(),
+      source: prospSource,
       partnerInfluence: String(cols[23] || '').trim(),
       sourcePartner: String(cols[24] || '').trim()
     });
@@ -529,11 +533,20 @@ export default function App() {
 
   const computeSliceMetrics = (teamKey, sourceKey) => {
     let sliceDeals = deals;
+    let sliceProspecting = prospectingRecords.filter(
+      p => String(p.stage || '').trim().toLowerCase() !== 'already in pipe'
+    );
+
     if (sourceKey !== 'ALL') {
       sliceDeals = sliceDeals.filter(d => d.source === sourceKey);
+      sliceProspecting = sliceProspecting.filter(p => {
+        const pSrc = p.source || (String(p.stage || '').toLowerCase().includes('mql') ? 'Marketing Sourced' : 'BDR Sourced');
+        return pSrc === sourceKey;
+      });
     }
     if (teamKey !== 'ALL') {
       sliceDeals = sliceDeals.filter(d => normalizeTeamLabel(d.team) === teamKey);
+      sliceProspecting = sliceProspecting.filter(p => normalizeTeamLabel(p.team) === teamKey);
     }
 
     let target = sheetSummary.totalTarget || 18710000;
@@ -549,13 +562,26 @@ export default function App() {
       .filter(d => String(d.commitStatus || '').trim().toLowerCase() === 'attained')
       .reduce((sum, d) => sum + (d.acv || 0), 0);
 
-    const commit = sliceDeals
+    // Combine Commit from both ANZ tab and ANZ Prospecting tab
+    const dealsCommit = sliceDeals
       .filter(d => String(d.commitStatus || '').trim().toLowerCase() === 'commit')
       .reduce((sum, d) => sum + (d.acv || 0), 0);
 
-    const likely = sliceDeals
+    const prospCommit = sliceProspecting
+      .filter(p => String(p.commitStatus || '').trim().toLowerCase() === 'commit')
+      .reduce((sum, p) => sum + (p.acv || 0), 0);
+
+    // Combine Likely from both ANZ tab and ANZ Prospecting tab
+    const dealsLikely = sliceDeals
       .filter(d => String(d.commitStatus || '').trim().toLowerCase() === 'likely')
       .reduce((sum, d) => sum + (d.acv || 0), 0);
+
+    const prospLikely = sliceProspecting
+      .filter(p => String(p.commitStatus || '').trim().toLowerCase() === 'likely')
+      .reduce((sum, p) => sum + (p.acv || 0), 0);
+
+    const commit = dealsCommit + prospCommit;
+    const likely = dealsLikely + prospLikely;
 
     const pool = sliceDeals.reduce((sum, d) => sum + (d.acv || 0), 0);
     const path = commit + (likely * 0.5);
@@ -577,7 +603,7 @@ export default function App() {
 
   const activeMetrics = useMemo(
     () => computeSliceMetrics(teamFilter, sourceFilter),
-    [teamFilter, sourceFilter, sheetSummary, deals]
+    [teamFilter, sourceFilter, sheetSummary, deals, prospectingRecords]
   );
 
   const filteredDeals = useMemo(() => {
@@ -892,7 +918,7 @@ export default function App() {
                 <div className="text-2xl font-bold text-rose-600">${(activeMetrics.remainingGap / 1000000).toFixed(2)}M</div>
               </div>
 
-              {/* 4th Card: COMMIT / LIKELY PATH */}
+              {/* 4th Card: COMMIT / LIKELY PATH (ANZ + ANZ Prospecting Combined) */}
               <div className="bg-white p-5 rounded-2xl border-2 border-indigo-200 shadow-sm">
                 <div className="flex justify-between text-xs text-slate-500 font-semibold mb-1">
                   <span>COMMIT / LIKELY PATH</span>
