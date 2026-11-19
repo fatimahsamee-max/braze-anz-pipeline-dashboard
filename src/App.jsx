@@ -579,8 +579,27 @@ export default function App() {
     }
   };
 
-  useEffect(() => { fetchLiveData(); }, []);
+useEffect(() => {
+  fetchLiveData();
 
+  // Auto-sync every 5 minutes while the dashboard is open
+  const intervalId = setInterval(() => {
+    fetchLiveData();
+  }, 5 * 60 * 1000);
+
+  // Also sync immediately when returning to this browser tab
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'visible') {
+      fetchLiveData();
+    }
+  };
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+
+  return () => {
+    clearInterval(intervalId);
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+  };
+}, []);
   useEffect(() => {
     setSelectedRep(null);
   }, [teamFilter, sourceFilter, leaderboardSortBy, searchQuery]);
