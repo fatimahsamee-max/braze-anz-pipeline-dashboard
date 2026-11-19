@@ -278,12 +278,12 @@ function parseProspectingCsvRows(rows) {
     const low = acctName.toLowerCase();
     if (low === 'total' || low === 'cotal' || low.includes('how to use') || low.includes('last updated') || low.includes('refreshed')) continue;
 
-    // Skip summary rows at top of sheet if header wasn't found
-    if (headerIdx === -1 && i < 32) continue;
+    if (headerIdx === -1 && i < 27) continue;
 
     const teamVal = String(cols[acctColIdx + 1] || '').trim();
     const stageVal = String(cols[acctColIdx + 2] || 'Prospecting').trim();
     if (!teamVal && !stageVal) continue;
+    if (stageVal.toLowerCase() === 'already in pipe') continue;
 
     parsed.push({
       id: `prosp-${i}`,
@@ -311,7 +311,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
 
   // Leaderboard states
-  const [leaderboardSortBy, setLeaderboardSortBy] = useState('attained'); // 'attained' | 'commit'
+  const [leaderboardSortBy, setLeaderboardSortBy] = useState('attained');
   const [selectedRep, setSelectedRep] = useState(null);
 
   // Partner Ecosystem states
@@ -368,7 +368,6 @@ export default function App() {
     return Math.ceil((targetDate - today) / (1000 * 60 * 60 * 24));
   };
 
-  // Fallback helper to fetch "ANZ Prospecting" tab directly if Web App deployment hasn't been re-versioned yet
   const fetchProspectingTabFallback = async () => {
     const rawUrl = `${PROSPECTING_GVIZ_CSV_URL}&_t=${Date.now()}`;
     const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(rawUrl)}`;
@@ -734,9 +733,34 @@ export default function App() {
   }, [crossbeamData, crossbeamPartnerFilter, crossbeamRepFilter, crossbeamBdFilter, crossbeamStageFilter, searchQuery]);
 
   // Focus Opportunities:
-  // LHS: Qualifying Opportunities in ANZ Tab closing in 0-90 days
-  // RHS: ANZ Prospecting Tab accounts (PQL & MQL prioritized)
-  const focusQualifyingLHS = useMemo(() => {
+  // First Column (LHS): PQL & MQL Accounts (ANZ Prospecting Tab)
+  // Second Column (RHS): Qualifying Opportunities Closing in 0-90 Days (ANZ Tab)
+  const focusProspectingFirstCol = useMemo(() => {
+    const q = focusSearch.toLowerCase();
+    return prospectingRecords
+      .filter(p => {
+        if (teamFilter !== 'ALL' && normalizeTeamLabel(p.team) !== teamFilter) return false;
+        const st = (p.stage || '').toLowerCase();
+        if (st === 'already in pipe') return false;
+        const isMqlOrPql = st.includes('mql') || st.includes('pql');
+        if (!isMqlOrPql) return false;
+        if (q) {
+          return (p.name || '').toLowerCase().includes(q) ||
+                 (p.ae || '').toLowerCase().includes(q) ||
+                 (p.bdr || '').toLowerCase().includes(q) ||
+                 (p.crossbeamPartners || '').toLowerCase().includes(q);
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const aIsMql = (a.stage || '').toLowerCase().includes('mql') ? 0 : 1;
+        const bIsMql = (b.stage || '').toLowerCase().includes('mql') ? 0 : 1;
+        if (aIsMql !== bIsMql) return aIsMql - bIsMql;
+        return (b.acv || 0) - (a.acv || 0);
+      });
+  }, [prospectingRecords, teamFilter, focusSearch]);
+
+  const focusQualifyingSecondCol = useMemo(() => {
     const q = focusSearch.toLowerCase();
     return deals
       .map(d => ({ ...d, days: getDaysUntilClose(d.closeDate) }))
@@ -755,30 +779,6 @@ export default function App() {
       })
       .sort((a, b) => a.days - b.days);
   }, [deals, teamFilter, sourceFilter, focusSearch]);
-
-  const focusProspectingRHS = useMemo(() => {
-    const q = focusSearch.toLowerCase();
-    return prospectingRecords
-      .filter(p => {
-        if (teamFilter !== 'ALL' && normalizeTeamLabel(p.team) !== teamFilter) return false;
-        const st = (p.stage || '').toLowerCase();
-        const isMqlOrPql = st.includes('mql') || st.includes('pql');
-        if (!isMqlOrPql) return false;
-        if (q) {
-          return (p.name || '').toLowerCase().includes(q) ||
-                 (p.ae || '').toLowerCase().includes(q) ||
-                 (p.bdr || '').toLowerCase().includes(q) ||
-                 (p.crossbeamPartners || '').toLowerCase().includes(q);
-        }
-        return true;
-      })
-      .sort((a, b) => {
-        const aIsMql = (a.stage || '').toLowerCase().includes('mql') ? 0 : 1;
-        const bIsMql = (b.stage || '').toLowerCase().includes('mql') ? 0 : 1;
-        if (aIsMql !== bIsMql) return aIsMql - bIsMql;
-        return (b.acv || 0) - (a.acv || 0);
-      });
-  }, [prospectingRecords, teamFilter, focusSearch]);
 
   return (
     <div className="min-h-screen bg-[#F8F9FC] text-slate-900 font-sans">
@@ -1328,8 +1328,8 @@ export default function App() {
 
         {/* =================================================================== */}
         {/* TAB 5: FOCUS OPPORTUNITIES                                          */}
-        {/*   LHS: Qualifying Opportunities Closing in 0-90 Days (ANZ Tab)      */}
-        {/*   RHS: PQL & MQL Accounts (ANZ Prospecting Tab)                     */}
+        {/*   First Column (LHS): PQL & MQL Accounts (ANZ Prospecting Tab)      */}
+        {/*   Second Column (RHS): Qualifying Opportunities Closing in 0-90d    */}
         {/* =================================================================== */}
         {activeTab === 'focus' && (
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
@@ -1350,62 +1350,20 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* LHS: Qualifying Opportunities in ANZ Tab closing in 0-90 days */}
-              <div className="space-y-3">
-                <div className="bg-rose-50 border border-rose-200 text-rose-950 p-3 rounded-xl font-bold text-xs flex justify-between items-center">
-                  <span>Qualifying Opportunities Closing in 0–90 Days</span>
-                  <span className="bg-[#FF595A] text-white px-2 py-0.5 rounded-full text-[11px]">{focusQualifyingLHS.length} Deals</span>
-                </div>
-
-                <div className="space-y-2.5 max-h-[650px] overflow-y-auto pr-1">
-                  {focusQualifyingLHS.length === 0 ? (
-                    <div className="p-6 text-center text-xs text-slate-500 border border-dashed rounded-xl">
-                      No Qualifying stage opportunities closing within 0–90 days match the current filter.
-                    </div>
-                  ) : (
-                    focusQualifyingLHS.map(d => (
-                      <div key={d.id} className="p-3.5 border border-slate-200 rounded-xl bg-white shadow-xs hover:border-rose-300 transition space-y-1.5">
-                        <div className="flex justify-between items-start gap-2">
-                          {d.id.startsWith('006') ? (
-                            <a href={`https://braze.lightning.force.com/lightning/r/Opportunity/${d.id}/view`} target="_blank" rel="noreferrer" className="font-bold text-xs text-indigo-600 hover:underline flex items-center gap-1">
-                              {d.name} <ExternalLink className="w-3 h-3 text-slate-400" />
-                            </a>
-                          ) : (
-                            <span className="font-bold text-xs text-slate-900">{d.name}</span>
-                          )}
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-rose-50 text-rose-700 border-rose-200 whitespace-nowrap">
-                            {d.days}d ({d.closeDate})
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-xs text-slate-600">
-                          <span>{d.team} · AE: <strong className="text-slate-800">{d.ae}</strong> · <span className="font-medium">{d.source}</span></span>
-                          <span className="font-black text-slate-900">${(d.acv || 0).toLocaleString()}</span>
-                        </div>
-                        {d.nextSteps && (
-                          <div className="text-[11px] text-slate-500 bg-slate-50 px-2.5 py-1 rounded border border-slate-100 truncate" title={d.nextSteps}>
-                            Next: {d.nextSteps}
-                          </div>
-                        )}
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {/* RHS: ANZ Prospecting Accounts (MQL & PQL) */}
+              {/* First Column (LHS): ANZ Prospecting Accounts (MQL & PQL) */}
               <div className="space-y-3">
                 <div className="bg-indigo-50 border border-indigo-200 text-indigo-950 p-3 rounded-xl font-bold text-xs flex justify-between items-center">
                   <span>ANZ Prospecting Accounts (MQL & PQL)</span>
-                  <span className="bg-indigo-600 text-white px-2 py-0.5 rounded-full text-[11px]">{focusProspectingRHS.length} Accounts</span>
+                  <span className="bg-indigo-600 text-white px-2 py-0.5 rounded-full text-[11px]">{focusProspectingFirstCol.length} Accounts</span>
                 </div>
 
                 <div className="space-y-2.5 max-h-[650px] overflow-y-auto pr-1">
-                  {focusProspectingRHS.length === 0 ? (
+                  {focusProspectingFirstCol.length === 0 ? (
                     <div className="p-6 text-center text-xs text-slate-500 border border-dashed rounded-xl">
                       No Prospecting | MQL or Prospecting | PQL accounts match the current filter.
                     </div>
                   ) : (
-                    focusProspectingRHS.map(p => {
+                    focusProspectingFirstCol.map(p => {
                       const isMql = (p.stage || '').toLowerCase().includes('mql');
                       return (
                         <div key={p.id} className="p-3.5 border border-slate-200 rounded-xl bg-white shadow-xs hover:border-indigo-300 transition space-y-1.5">
@@ -1431,6 +1389,48 @@ export default function App() {
                         </div>
                       );
                     })
+                  )}
+                </div>
+              </div>
+
+              {/* Second Column (RHS): Qualifying Opportunities in ANZ Tab closing in 0-90 days */}
+              <div className="space-y-3">
+                <div className="bg-rose-50 border border-rose-200 text-rose-950 p-3 rounded-xl font-bold text-xs flex justify-between items-center">
+                  <span>Qualifying Opportunities Closing in 0–90 Days</span>
+                  <span className="bg-[#FF595A] text-white px-2 py-0.5 rounded-full text-[11px]">{focusQualifyingSecondCol.length} Deals</span>
+                </div>
+
+                <div className="space-y-2.5 max-h-[650px] overflow-y-auto pr-1">
+                  {focusQualifyingSecondCol.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-slate-500 border border-dashed rounded-xl">
+                      No Qualifying stage opportunities closing within 0–90 days match the current filter.
+                    </div>
+                  ) : (
+                    focusQualifyingSecondCol.map(d => (
+                      <div key={d.id} className="p-3.5 border border-slate-200 rounded-xl bg-white shadow-xs hover:border-rose-300 transition space-y-1.5">
+                        <div className="flex justify-between items-start gap-2">
+                          {d.id.startsWith('006') ? (
+                            <a href={`https://braze.lightning.force.com/lightning/r/Opportunity/${d.id}/view`} target="_blank" rel="noreferrer" className="font-bold text-xs text-indigo-600 hover:underline flex items-center gap-1">
+                              {d.name} <ExternalLink className="w-3 h-3 text-slate-400" />
+                            </a>
+                          ) : (
+                            <span className="font-bold text-xs text-slate-900">{d.name}</span>
+                          )}
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-rose-50 text-rose-700 border-rose-200 whitespace-nowrap">
+                            {d.days}d ({d.closeDate})
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-xs text-slate-600">
+                          <span>{d.team} · AE: <strong className="text-slate-800">{d.ae}</strong> · <span className="font-medium">{d.source}</span></span>
+                          <span className="font-black text-slate-900">${(d.acv || 0).toLocaleString()}</span>
+                        </div>
+                        {d.nextSteps && (
+                          <div className="text-[11px] text-slate-500 bg-slate-50 px-2.5 py-1 rounded border border-slate-100 truncate" title={d.nextSteps}>
+                            Next: {d.nextSteps}
+                          </div>
+                        )}
+                      </div>
+                    ))
                   )}
                 </div>
               </div>
