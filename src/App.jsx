@@ -27,6 +27,13 @@ function TeamSpeedometer({ title, target, attained, commit, likely, pool, isMast
   const coveragePercent = target > 0 ? Math.round((pool / target) * 100) : 0;
   const pathPercent = target > 0 ? Math.round((path / target) * 100) : 0;
 
+  // Segmented bar proportions out of Total Pool (Attained + Working Pool)
+  const totalCombinedPool = Math.max(pool + attained, attained + commit + likely, 1);
+  const nonCommitPool = Math.max(0, pool - commit - likely);
+  const attainedBarPct = (attained / totalCombinedPool) * 100;
+  const commitBarPct = (commit / totalCombinedPool) * 100;
+  const likelyBarPct = (likely / totalCombinedPool) * 100;
+
   const radius = 80;
   const strokeWidth = 14;
   const cx = 110;
@@ -138,18 +145,53 @@ function TeamSpeedometer({ title, target, attained, commit, likely, pool, isMast
           </div>
         </div>
 
-        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden flex">
+        {/* Segmented Pool Breakdown Bar: Attained (Emerald) | Commit (Indigo) | Likely (Amber) | Open Pool (Slate) */}
+        <div className="space-y-1">
           <div
-            className="bg-emerald-500 h-full transition-all duration-500"
-            style={{ width: `${Math.min(100, target > 0 ? (commit / target) * 100 : 0)}%` }}
-          />
-          <div
-            className="bg-indigo-500 h-full transition-all duration-500"
-            style={{ width: `${Math.min(100, target > 0 ? (likely / target) * 100 : 0)}%` }}
-          />
+            className="w-full bg-slate-200/80 h-2.5 rounded-full overflow-hidden flex"
+            title={`Total Pool: ${formatShort(pool + attained)} | Attained: ${formatShort(attained)} | Commit: ${formatShort(commit)} | Likely: ${formatShort(likely)} | Open: ${formatShort(nonCommitPool)}`}
+          >
+            {attainedBarPct > 0 && (
+              <div
+                className="bg-emerald-500 h-full transition-all duration-500"
+                style={{ width: `${Math.min(100, attainedBarPct)}%` }}
+                title={`Attained: ${formatShort(attained)} (${Math.round(attainedBarPct)}%)`}
+              />
+            )}
+            {commitBarPct > 0 && (
+              <div
+                className="bg-indigo-500 h-full transition-all duration-500"
+                style={{ width: `${Math.min(100, commitBarPct)}%` }}
+                title={`Commit: ${formatShort(commit)} (${Math.round(commitBarPct)}%)`}
+              />
+            )}
+            {likelyBarPct > 0 && (
+              <div
+                className="bg-amber-400 h-full transition-all duration-500"
+                style={{ width: `${Math.min(100, likelyBarPct)}%` }}
+                title={`Likely: ${formatShort(likely)} (${Math.round(likelyBarPct)}%)`}
+              />
+            )}
+          </div>
+
+          {/* Compact Color Legend */}
+          <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[8.5px] font-semibold text-slate-600">
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+              Att: {formatShort(attained).replace('USD ', '$')}
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 inline-block" />
+              Com: {formatShort(commit).replace('USD ', '$')}
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+              Lik: {formatShort(likely).replace('USD ', '$')}
+            </span>
+          </div>
         </div>
 
-        <div className="flex justify-between items-center text-[9.5px] text-slate-500">
+        <div className="flex justify-between items-center text-[9.5px] text-slate-500 pt-0.5 border-t border-slate-100">
           <span>Path: <strong className="text-slate-800">{formatShort(path)}</strong> ({pathPercent}%)</span>
           <span>Gap: <strong className="text-slate-800">{formatShort(gap)}</strong></span>
         </div>
